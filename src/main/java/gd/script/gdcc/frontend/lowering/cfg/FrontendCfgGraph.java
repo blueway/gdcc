@@ -393,7 +393,7 @@ public record FrontendCfgGraph(
         if (payload.leaf().kind() == FrontendWritableRoutePayload.LeafKind.PROPERTY
                 && payload.leaf().containerValueIdOrNull() == null
                 && !payload.reverseCommitSteps().isEmpty()) {
-            var anchor = payload.routeAnchor().range().start();
+            var anchor = payload.routeAnchor().range().startPoint();
             throw new IllegalArgumentException(
                     "Frontend CFG writable route in sequence '"
                             + nodeId
@@ -401,7 +401,7 @@ public record FrontendCfgGraph(
                             + " (member '"
                             + payload.leaf().memberNameOrNull()
                             + "', anchor "
-                            + (anchor.line() + 1)
+                            + (anchor.row() + 1)
                             + ":"
                             + (anchor.column() + 1)
                             + ")"
