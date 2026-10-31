@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CCodegenCollectErrorsTest {
     @Test
-    void collectModeReportsEveryFailingFunctionInOneSummary() {
+    void collectModeReportsEveryFailingFunctionInOneSummary() throws Exception {
         var hostClass = new LirClassDef("CollectErrorsHost", "RefCounted", false, false,
                 Map.of(), List.of(), List.of(), List.of());
         hostClass.setSourceFile("collect_errors_host.gd");
