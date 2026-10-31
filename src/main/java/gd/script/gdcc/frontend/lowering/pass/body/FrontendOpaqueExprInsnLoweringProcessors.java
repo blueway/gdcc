@@ -97,7 +97,9 @@ final class FrontendOpaqueExprInsnLoweringProcessors {
                 case SUPER ->
                         block.appendNonTerminatorInstruction(new AssignInsn(resultSlotId, "self"));
                 case LOCAL_VAR, PARAMETER, CAPTURE ->
-                        block.appendNonTerminatorInstruction(new AssignInsn(resultSlotId, binding.symbolName()));
+                        block.appendNonTerminatorInstruction(
+                                new AssignInsn(resultSlotId, session.sourceBindingSlotId(binding))
+                        );
                 case PROPERTY -> {
                     if (session.isStaticPropertyBinding(binding)) {
                         block.appendNonTerminatorInstruction(new LoadStaticInsn(

@@ -183,6 +183,49 @@ class FrontendLoweringBodyInsnPassTest {
         );
     }
 
+    /// GDScript scopes a for iterator and a later same-named local independently, but LIR
+    /// variables are function-scoped. The lowering session must give the divergent local
+    /// declaration its own slot instead of failing the shared-variable type check.
+    @Test
+    void runSeparatesShadowedIteratorAndLocalSlotsByDeclaration() throws Exception {
+        var prepared = prepareContext(
+                "body_insn_shadowed_iterator_local.gd",
+                """
+                        class_name BodyInsnShadowedIteratorLocal
+                        extends RefCounted
+
+                        func ping(values: Array) -> void:
+                            for item in values:
+                                var found: bool = values.has(item)
+                            for i in range(1):
+                                var item: int = i
+                                item += 1
+                        """,
+                Map.of("BodyInsnShadowedIteratorLocal", "RuntimeBodyInsnShadowedIteratorLocal"),
+                true
+        );
+        var pingContext = requireContext(
+                prepared.context().requireFunctionLoweringContexts(),
+                FunctionLoweringContext.Kind.EXECUTABLE_BODY,
+                "RuntimeBodyInsnShadowedIteratorLocal",
+                "ping"
+        );
+
+        new FrontendLoweringBodyInsnPass().run(prepared.context());
+
+        var function = pingContext.targetFunction();
+        var localSlotIds = function.getVariables().keySet().stream()
+                .filter(id -> id.startsWith("item__slot_"))
+                .toList();
+
+        assertAll(
+                () -> assertFalse(prepared.diagnostics().hasErrors()),
+                () -> assertEquals(GdVariantType.VARIANT, requireVariableType(function, "item")),
+                () -> assertEquals(1, localSlotIds.size(), localSlotIds.toString()),
+                () -> assertEquals(GdIntType.INT, requireVariableType(function, localSlotIds.getFirst()))
+        );
+    }
+
     @Test
     void runLowersStringFormatBinaryIntoModuleInsnAfterContainerConstruction() throws Exception {
         var prepared = prepareContext(

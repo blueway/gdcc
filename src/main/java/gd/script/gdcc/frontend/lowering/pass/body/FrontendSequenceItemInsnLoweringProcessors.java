@@ -285,7 +285,7 @@ final class FrontendSequenceItemInsnLoweringProcessors {
                     "local_init"
             );
             block.appendNonTerminatorInstruction(new AssignInsn(
-                    FrontendBodyLoweringSupport.sourceLocalSlotId(node.declaration()),
+                    session.sourceLocalSlotIdFor(node.declaration()),
                     materializedSlotId
             ));
             return block;

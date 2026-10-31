@@ -77,7 +77,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.SequencedMap;
 import java.util.Set;
@@ -101,6 +104,10 @@ public final class FrontendBodyLoweringSession {
     private final @NotNull LirFunctionDef function;
     private final @NotNull ClassRegistry classRegistry;
     private final @NotNull SequencedMap<String, FrontendBodyLoweringSupport.CfgValueMaterialization> valueMaterializations;
+    /// Source-local declarations whose name is shared with a different-typed source slot in the
+    /// same function. GDScript scopes such declarations independently, but LIR variables are
+    /// function-scoped, so the lowering session gives each divergent declaration its own slot id.
+    private final @NotNull Map<VariableDeclaration, String> sourceLocalSlotIds = new IdentityHashMap<>();
     /// Value ids consumed as await operands. A coroutine call whose result is in this set is
     /// awaited (ownership moves into the await); any other coroutine call result is a discarded
     /// statement-position value that must be detached through an INTERNAL destruct right after
@@ -141,6 +148,7 @@ public final class FrontendBodyLoweringSession {
 
     public void run() {
         requireShellOnlyTarget();
+        planSourceLocalSlotIds();
         declareSelfSlotIfNeeded();
         declareSourceLocalSlots();
         declareCfgValueSlots();
@@ -621,7 +629,7 @@ public final class FrontendBodyLoweringSession {
             case IdentifierExpression identifierExpression -> {
                 var binding = requireBinding(identifierExpression);
                 yield switch (binding.kind()) {
-                    case LOCAL_VAR, PARAMETER, CAPTURE -> binding.symbolName();
+                    case LOCAL_VAR, PARAMETER, CAPTURE -> sourceBindingSlotId(binding);
                     case SELF -> throw identifierSelfBindingContractViolation(
                             identifierExpression,
                             "DIRECT_SLOT writable root"
@@ -909,7 +917,7 @@ public final class FrontendBodyLoweringSession {
 
     private @NotNull GdType requireWritableBindingStorageType(@NotNull FrontendBinding binding) {
         return switch (Objects.requireNonNull(binding, "binding must not be null").kind()) {
-            case LOCAL_VAR, PARAMETER, CAPTURE -> requireFunctionVariableType(binding.symbolName());
+            case LOCAL_VAR, PARAMETER, CAPTURE -> requireFunctionVariableType(sourceBindingSlotId(binding));
             case SELF -> throw new IllegalStateException(
                     "Writable binding storage lookup must use explicit SelfExpression instead of binding kind SELF"
             );
@@ -1758,6 +1766,76 @@ public final class FrontendBodyLoweringSession {
         ensureVariable("self", new GdObjectType(currentClassName()));
     }
 
+    /// Precomputes source-local slot ids before any declaration is materialized.
+    ///
+    /// LIR variables are function-scoped, while GDScript `var`/`for` bindings are block-scoped.
+    /// A function may therefore legally reuse one name for a for-loop iterator and a later local
+    /// declaration with a different type (the SortPuz `_load_level` loop does exactly that). Keep
+    /// the common single-type case on the source name so tests and diagnostics stay readable, and
+    /// only give divergent declarations a stable declaration-derived suffix.
+    private void planSourceLocalSlotIds() {
+        var typesByName = new LinkedHashMap<String, List<GdType>>();
+        var declarations = new ArrayList<VariableDeclaration>();
+        for (var nodeId : graph.nodeIds()) {
+            if (!(graph.requireNode(nodeId) instanceof FrontendCfgGraph.SequenceNode(_, var items, _))) {
+                continue;
+            }
+            for (var item : items) {
+                if (!(item instanceof LocalDeclarationItem localDeclarationItem)) {
+                    continue;
+                }
+                var declaration = localDeclarationItem.declaration();
+                declarations.add(declaration);
+                typesByName.computeIfAbsent(declaration.name(), _ -> new ArrayList<>())
+                        .add(requireSourceLocalSlotType(declaration));
+            }
+        }
+        for (var sourceSlot : functionContext.forSourceIteratorSlots().values()) {
+            typesByName.computeIfAbsent(sourceSlot.sourceIteratorSlotId(), _ -> new ArrayList<>())
+                    .add(sourceSlot.exposedType());
+        }
+        for (var declaration : declarations) {
+            var types = Objects.requireNonNull(typesByName.get(declaration.name()), "source local type group");
+            var slotId = hasDistinctSourceSlotTypes(types)
+                    ? declaration.name() + "__slot_" + declaration.range().startByte()
+                    : declaration.name();
+            sourceLocalSlotIds.put(declaration, slotId);
+        }
+    }
+
+    private static boolean hasDistinctSourceSlotTypes(@NotNull List<GdType> types) {
+        if (types.isEmpty()) {
+            return false;
+        }
+        var first = types.getFirst();
+        for (var index = 1; index < types.size(); index++) {
+            var candidate = types.get(index);
+            if (first.getClass() != candidate.getClass()
+                    || !first.getTypeName().equals(candidate.getTypeName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @NotNull String sourceLocalSlotIdFor(@NotNull VariableDeclaration declaration) {
+        Objects.requireNonNull(declaration, "declaration must not be null");
+        return sourceLocalSlotIds.getOrDefault(declaration, declaration.name());
+    }
+
+    /// Resolves a storage-backed source binding to its LIR slot id. For-loop iterators are
+    /// published as `LOCAL_VAR` bindings whose declaration site is the `ForStatement`, so they
+    /// keep their source name; local declarations may have a declaration-derived suffix when
+    /// their name is shared by a different type in the same function.
+    @NotNull String sourceBindingSlotId(@NotNull FrontendBinding binding) {
+        Objects.requireNonNull(binding, "binding must not be null");
+        if (binding.kind() == FrontendBindingKind.LOCAL_VAR
+                && binding.declarationSite() instanceof VariableDeclaration declaration) {
+            return sourceLocalSlotIdFor(declaration);
+        }
+        return binding.symbolName();
+    }
+
     private void declareSourceLocalSlots() {
         for (var nodeId : graph.nodeIds()) {
             if (!(graph.requireNode(nodeId) instanceof FrontendCfgGraph.SequenceNode(_, var items, _))) {
@@ -1768,8 +1846,8 @@ public final class FrontendBodyLoweringSession {
                     continue;
                 }
                 var declaration = localDeclarationItem.declaration();
-                var slotType = FrontendBodyLoweringSupport.requireSourceLocalSlotType(analysisData, declaration);
-                ensureVariable(FrontendBodyLoweringSupport.sourceLocalSlotId(declaration), slotType);
+                var slotType = requireSourceLocalSlotType(declaration);
+                ensureVariable(sourceLocalSlotIdFor(declaration), slotType);
             }
         }
     }
