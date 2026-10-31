@@ -2,6 +2,9 @@ name: Release
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -55,6 +58,13 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "VERSION=${version}" >> "${GITHUB_ENV}"
           echo "TAG=v${version}" >> "${GITHUB_ENV}"
+
+          # A tag push must release exactly the version declared in the build file;
+          # otherwise the workflow would publish a tag that does not match its tree.
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match project version v${version}" >&2
+            exit 1
+          fi
 
       - name: Install Zig
         shell: bash
