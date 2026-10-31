@@ -64,7 +64,14 @@ public final class OperatorInsnGen implements CInsnGen<LirInstruction> {
         }
         validateResultCompatibility(bodyBuilder, decision.path(), decision.semanticResultType(), resultVar);
 
-        if (decision.path() == OperatorResolver.OperatorPath.BUILTIN_EVALUATOR) {
+        if (decision.path() == OperatorResolver.OperatorPath.VARIANT_EVALUATE) {
+            emitUnaryVariantEvaluate(
+                    bodyBuilder,
+                    resultVar,
+                    instruction.op(),
+                    operandVar
+            );
+        } else if (decision.path() == OperatorResolver.OperatorPath.BUILTIN_EVALUATOR) {
             emitUnaryBuiltinEvaluator(
                     bodyBuilder,
                     resultVar,
@@ -297,6 +304,89 @@ public final class OperatorInsnGen implements CInsnGen<LirInstruction> {
                 semanticResultType,
                 List.of(bodyBuilder.valueOfVar(leftVar), bodyBuilder.valueOfVar(rightVar))
         );
+    }
+
+    private void emitUnaryVariantEvaluate(@NotNull CBodyBuilder bodyBuilder,
+                                          @NotNull LirVariable resultVar,
+                                          @NotNull GodotOperator op,
+                                          @NotNull LirVariable operandVar) {
+        var operand = InsnGenSupport.materializeVariantOperand(bodyBuilder, operandVar, "op_operand_variant");
+        // Godot's unary evaluator entries are keyed by (leftType, NIL). Passing the operand
+        // as the right-hand slot would look up the binary table entry instead.
+        var nilOperand = bodyBuilder.newTempVariable(
+                "op_unary_nil",
+                GdVariantType.VARIANT,
+                "godot_new_Variant_nil()"
+        );
+        bodyBuilder.declareTempVar(nilOperand);
+
+        var resultVariant = bodyBuilder.newTempVariable("op_eval_result", GdVariantType.VARIANT);
+        bodyBuilder.declareUninitializedTempVar(resultVariant);
+        var validFlag = bodyBuilder.newTempVariable("op_eval_valid", GdBoolType.BOOL, "false");
+        bodyBuilder.declareTempVar(validFlag);
+        var operandArgCode = InsnGenSupport.renderArgumentCode(
+                bodyBuilder,
+                operand.variantValue(),
+                "operator instruction"
+        );
+        var nilArgCode = InsnGenSupport.renderArgumentCode(bodyBuilder, nilOperand, "operator instruction");
+        bodyBuilder.appendLine(
+                "godot_variant_evaluate(" +
+                        resolver.resolveVariantOperatorEnumLiteral(op) +
+                        ", " + operandArgCode +
+                        ", " + nilArgCode +
+                        ", &" + resultVariant.name() +
+                        ", &" + validFlag.name() +
+                        ");"
+        );
+        bodyBuilder.appendLine("if (!" + validFlag.name() + ") {");
+        bodyBuilder.appendLine(
+                "GDCC_PRINT_RUNTIME_ERROR(\"godot_variant_evaluate failed for operator '" + op.name() +
+                        "'\", __func__, __FILE__, __LINE__);"
+        );
+        bodyBuilder.assignExpr(resultVariant, "godot_new_Variant_nil()", GdVariantType.VARIANT);
+        bodyBuilder.destroyTempVar(resultVariant);
+        bodyBuilder.destroyTempVar(nilOperand);
+        if (operand.tempVar() != null) {
+            bodyBuilder.destroyTempVar(operand.tempVar());
+        }
+        bodyBuilder.returnDefault();
+        bodyBuilder.appendLine("}");
+        resultVariant.setInitialized(true);
+
+        if (resultVar.type() instanceof GdVariantType) {
+            bodyBuilder.callAssign(
+                    bodyBuilder.targetOfVar(resultVar),
+                    "godot_new_Variant_with_Variant",
+                    GdVariantType.VARIANT,
+                    List.of(resultVariant)
+            );
+        } else {
+            var typeCheckExpr = renderVariantUnpackTypeCheckExpr(bodyBuilder, resultVariant, resultVar.type());
+            bodyBuilder.appendLine("if (!(" + typeCheckExpr + ")) {");
+            InsnGenSupport.emitRuntimeFailureReturn(
+                    bodyBuilder,
+                    "variant_evaluate type check failed for operator '" + op.name() +
+                            "': expected " + resultVar.type().getTypeName(),
+                    operand.tempVar(),
+                    nilOperand,
+                    resultVariant
+            );
+            bodyBuilder.appendLine("}");
+            InsnGenSupport.unpackVariantAssign(
+                    bodyBuilder,
+                    bodyBuilder.targetOfVar(resultVar),
+                    resultVar.type(),
+                    resultVariant,
+                    "variant_evaluate result target"
+            );
+        }
+
+        bodyBuilder.destroyTempVar(resultVariant);
+        bodyBuilder.destroyTempVar(nilOperand);
+        if (operand.tempVar() != null) {
+            bodyBuilder.destroyTempVar(operand.tempVar());
+        }
     }
 
     private void emitBinaryVariantEvaluate(@NotNull CBodyBuilder bodyBuilder,

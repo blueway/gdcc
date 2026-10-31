@@ -60,6 +60,17 @@ public final class OperatorResolver {
             );
         }
 
+        // Unary operators on a Variant keep GDScript's runtime semantics. Godot registers
+        // unary evaluators under the NIL right-hand type, so the backend must pass a nil
+        // second operand to `godot_variant_evaluate` instead of reusing the left operand.
+        if (operandType instanceof GdVariantType) {
+            return new PathDecision(
+                    OperatorPath.VARIANT_EVALUATE,
+                    GdVariantType.VARIANT,
+                    "Variant dynamic evaluate path"
+            );
+        }
+
         var semanticResultType = resolveOperatorReturnType(bodyBuilder, operandType, op, null);
         if (semanticResultType == null) {
             return PathDecision.unresolved(

@@ -377,6 +377,44 @@ class COperatorInsnGenTest {
     }
 
     @Test
+    @DisplayName("unary Variant op should use variant_evaluate with a nil right operand")
+    void variantOperandUnaryUsesVariantEvaluateWithNilRight() {
+        var body = generateBody(
+                emptyApi(),
+                new UnaryOpInsn("result", GodotOperator.NEGATE, "operand"),
+                List.of(
+                        new VariableSpec("operand", GdVariantType.VARIANT, false),
+                        new VariableSpec("result", GdVariantType.VARIANT, false)
+                )
+        );
+
+        assertTrue(body.contains("godot_variant_evaluate(GDEXTENSION_VARIANT_OP_NEGATE"), body);
+        assertTrue(body.contains("godot_new_Variant_nil()"), body);
+        assertTrue(body.contains("&$operand"), body);
+        assertTrue(body.contains("&__gdcc_tmp_op_unary_nil_"), body);
+        assertTrue(body.contains("$result = godot_new_Variant_with_Variant(&__gdcc_tmp_op_eval_result_"), body);
+        assertFalse(body.contains("gdcc_eval_unary_"), body);
+    }
+
+    @Test
+    @DisplayName("unary Variant NOT should unpack the dynamic result into bool")
+    void variantOperandUnaryNotUnpacksToBool() {
+        var body = generateBody(
+                emptyApi(),
+                new UnaryOpInsn("result", GodotOperator.NOT, "operand"),
+                List.of(
+                        new VariableSpec("operand", GdVariantType.VARIANT, false),
+                        new VariableSpec("result", GdBoolType.BOOL, false)
+                )
+        );
+
+        assertTrue(body.contains("godot_variant_evaluate(GDEXTENSION_VARIANT_OP_NOT"), body);
+        assertTrue(body.contains("gdcc_check_variant_type_builtin(&__gdcc_tmp_op_eval_result_"), body);
+        assertTrue(body.contains("GDEXTENSION_VARIANT_TYPE_BOOL"), body);
+        assertTrue(body.contains("$result = godot_new_bool_with_Variant(&__gdcc_tmp_op_eval_result_"), body);
+    }
+
+    @Test
     @DisplayName("binary non-compare builtin should emit ptr evaluator call")
     void binaryNonCompareBuiltinEmitsEvaluatorCall() {
         var body = generateBody(
