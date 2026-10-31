@@ -145,6 +145,7 @@ public final class GdextensionMetadataFile {
         return switch (targetPlatform.architecture) {
             case X86_64 -> "x86_64";
             case AARCH64 -> "arm64";
+            case ARM32 -> "arm32";
             case RISCV64 -> "rv64";
             case WASM32 -> "wasm32";
         };
@@ -155,7 +156,7 @@ public final class GdextensionMetadataFile {
             case WINDOWS_X86_64, WINDOWS_AARCH64 -> "windows";
             case LINUX_X86_64, LINUX_AARCH64, LINUX_RISCV64 -> "linux";
             case MACOS_X86_64, MACOS_AARCH64 -> "macos";
-            case ANDROID_X86_64, ANDROID_AARCH64 -> "android";
+            case ANDROID_X86_64, ANDROID_AARCH64, ANDROID_ARM32 -> "android";
             case WEB_WASM32 -> "web";
         };
     }

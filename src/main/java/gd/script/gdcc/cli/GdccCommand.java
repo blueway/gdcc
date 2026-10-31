@@ -71,7 +71,7 @@ public final class GdccCommand implements Callable<Integer> {
     @Option(
             names = {"-o", "--output"},
             paramLabel = "<output>",
-            description = "Output target path. Defaults to input filenames without .gd suffixes joined by underscores."
+            description = "Output target path. Defaults to core."
     )
     Path output;
 
@@ -108,7 +108,7 @@ public final class GdccCommand implements Callable<Integer> {
     @Option(
             names = "--target",
             paramLabel = "<platform>",
-            description = "Target platform. Supported: windows-x86-64, windows-aarch64, linux-x86-64, linux-aarch64, linux-riscv64, macos-x86-64, macos-aarch64, android-x86-64, android-aarch64, web-wasm32. Defaults to the native host platform."
+            description = "Target platform. Supported: windows-x86-64, windows-aarch64, linux-x86-64, linux-aarch64, linux-riscv64, macos-x86-64, macos-aarch64, android-x86-64, android-aarch64, android-arm32, web-wasm32. Defaults to the native host platform."
     )
     String target;
 
@@ -125,6 +125,12 @@ public final class GdccCommand implements Callable<Integer> {
             description = "Godot project.godot file. When every input belongs to this project, emit <output>/<output-name>.gdextension."
     )
     Path project;
+
+    @Option(
+            names = "--no-strip",
+            description = "Keep DWARF and the symbol table in native artifacts. CLI builds strip them by default."
+    )
+    boolean noStrip;
 
     @Option(
             names = {"-v", "--verbose"},
@@ -217,12 +223,10 @@ public final class GdccCommand implements Callable<Integer> {
         return new OutputTarget(moduleName, moduleName, normalizedOutput);
     }
 
+    /// The default module name: one stable artifact name (`libcore.so`) no matter how
+    /// many source files the module collects.
     private @NotNull String defaultOutputName(@NotNull List<SourceInput> sourceInputs) {
-        var stems = new ArrayList<String>(sourceInputs.size());
-        for (var sourceInput : sourceInputs) {
-            stems.add(sourceInput.defaultOutputStem());
-        }
-        return String.join("_", stems);
+        return "core";
     }
 
     private @NotNull CompileOptions compileOptions(@NotNull OutputTarget outputTarget) {
@@ -233,7 +237,8 @@ public final class GdccCommand implements Callable<Integer> {
                 targetPlatform(),
                 false,
                 CompileOptions.DEFAULT_OUTPUT_MOUNT_ROOT,
-                cCompilerKind()
+                cCompilerKind(),
+                !noStrip
         );
     }
 

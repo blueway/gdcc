@@ -15,6 +15,7 @@ public enum TargetPlatform {
     MACOS_AARCH64(PlatformFamily.MACOS, HardwareArchitecture.AARCH64, "aarch64-macos-none"),
     ANDROID_X86_64(PlatformFamily.ANDROID, HardwareArchitecture.X86_64, "x86_64-linux-android"),
     ANDROID_AARCH64(PlatformFamily.ANDROID, HardwareArchitecture.AARCH64, "aarch64-linux-android"),
+    ANDROID_ARM32(PlatformFamily.ANDROID, HardwareArchitecture.ARM32, "arm-linux-androideabi"),
     WEB_WASM32(PlatformFamily.WEB, HardwareArchitecture.WASM32, "wasm32-emscripten"),
     ;
 
@@ -75,6 +76,7 @@ public enum TargetPlatform {
             return switch (arch) {
                 case X86_64 -> ANDROID_X86_64;
                 case AARCH64 -> ANDROID_AARCH64;
+                case ARM32 -> ANDROID_ARM32;
                 case RISCV64, WASM32 -> throw unsupportedNativePlatform(osName, osArch);
             };
         }
@@ -82,18 +84,18 @@ public enum TargetPlatform {
             case String s when s.contains("mac") || s.contains("darwin") -> switch (arch) {
                 case X86_64 -> MACOS_X86_64;
                 case AARCH64 -> MACOS_AARCH64;
-                case RISCV64, WASM32 -> throw unsupportedNativePlatform(osName, osArch);
+                case ARM32, RISCV64, WASM32 -> throw unsupportedNativePlatform(osName, osArch);
             };
             case String s when s.contains("win") -> switch (arch) {
                 case X86_64 -> WINDOWS_X86_64;
                 case AARCH64 -> WINDOWS_AARCH64;
-                case RISCV64, WASM32 -> throw unsupportedNativePlatform(osName, osArch);
+                case ARM32, RISCV64, WASM32 -> throw unsupportedNativePlatform(osName, osArch);
             };
             case String s when s.contains("linux") -> switch (arch) {
                 case X86_64 -> LINUX_X86_64;
                 case AARCH64 -> LINUX_AARCH64;
                 case RISCV64 -> LINUX_RISCV64;
-                case WASM32 -> throw unsupportedNativePlatform(osName, osArch);
+                case ARM32, WASM32 -> throw unsupportedNativePlatform(osName, osArch);
             };
             default -> throw unsupportedNativePlatform(osName, osArch);
         };
@@ -103,6 +105,7 @@ public enum TargetPlatform {
         return switch (osArch) {
             case "x86_64", "amd64", "x64" -> HardwareArchitecture.X86_64;
             case "aarch64", "arm64" -> HardwareArchitecture.AARCH64;
+            case "arm", "armv7", "armv7l", "arm32" -> HardwareArchitecture.ARM32;
             case "riscv64" -> HardwareArchitecture.RISCV64;
             case "wasm32" -> HardwareArchitecture.WASM32;
             default -> throw unsupportedNativePlatform(osName, osArch);

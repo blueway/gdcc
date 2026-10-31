@@ -37,7 +37,7 @@ class GdccCommandOptionTest {
                 .toList();
 
         assertEquals(
-                Set.of("-o", "--output", "--prefix", "--class-map", "--gde", "--opt", "--optimize", "--target", "--backend", "--project", "-v", "--verbose"),
+                Set.of("-o", "--output", "--no-strip", "--prefix", "--class-map", "--gde", "--opt", "--optimize", "--target", "--backend", "--project", "-v", "--verbose"),
                 Set.copyOf(optionFields)
         );
     }
@@ -53,7 +53,7 @@ class GdccCommandOptionTest {
         var help = StringUtil.stripAnsi(terminal.outText());
         assertTrue(help.contains("files"), help);
         assertTrue(help.contains("-o, --output"), help);
-        assertTrue(help.contains("Defaults to input filenames"), help);
+        assertTrue(help.contains("Defaults to core"), help);
         assertTrue(help.contains("--prefix"), help);
         assertTrue(help.contains("--class-map"), help);
         assertTrue(help.contains("--gde"), help);

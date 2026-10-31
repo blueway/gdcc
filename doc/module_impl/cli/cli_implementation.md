@@ -349,7 +349,7 @@ new CompileOptions(
 
 - 接受 `TargetPlatform` 当前枚举值的 CLI 形式，大小写不敏感，`-` 与 `_` 在输入中等价。
 - 支持值为 `windows-x86-64`、`windows-aarch64`、`linux-x86-64`、`linux-aarch64`、`linux-riscv64`、
-  `macos-x86-64`、`macos-aarch64`、`android-x86-64`、`android-aarch64`、`web-wasm32`。
+  `macos-x86-64`、`macos-aarch64`、`android-x86-64`、`android-aarch64`、`android-arm32`、`web-wasm32`。
 - 省略时使用 `TargetPlatform.getNativePlatform()`。
 - `--target` 只设置 backend output platform，不改变 `-o` / `--output` 指向的 host build directory。
 - unsupported `--target` 在 API state mutation 和 compile task 创建前返回 usage error。

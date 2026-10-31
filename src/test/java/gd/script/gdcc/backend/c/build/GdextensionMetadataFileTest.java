@@ -73,6 +73,7 @@ class GdextensionMetadataFileTest {
         expectedKeys.put(TargetPlatform.MACOS_AARCH64, "macos.debug.arm64");
         expectedKeys.put(TargetPlatform.ANDROID_X86_64, "android.debug.x86_64");
         expectedKeys.put(TargetPlatform.ANDROID_AARCH64, "android.debug.arm64");
+        expectedKeys.put(TargetPlatform.ANDROID_ARM32, "android.debug.arm32");
         expectedKeys.put(TargetPlatform.WEB_WASM32, "web.debug.wasm32");
 
         for (var entry : expectedKeys.entrySet()) {

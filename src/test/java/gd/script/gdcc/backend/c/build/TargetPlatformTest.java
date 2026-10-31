@@ -19,6 +19,7 @@ class TargetPlatformTest {
         expected.put(TargetPlatform.MACOS_AARCH64, "libdemo.dylib");
         expected.put(TargetPlatform.ANDROID_X86_64, "libdemo.so");
         expected.put(TargetPlatform.ANDROID_AARCH64, "libdemo.so");
+        expected.put(TargetPlatform.ANDROID_ARM32, "libdemo.so");
         expected.put(TargetPlatform.WEB_WASM32, "demo.wasm");
 
         for (var entry : expected.entrySet()) {
