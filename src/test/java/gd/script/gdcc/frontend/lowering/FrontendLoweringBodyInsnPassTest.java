@@ -12073,7 +12073,9 @@ class FrontendLoweringBodyInsnPassTest {
                 () -> assertEquals(0L, requireIntConstant(function, initArgs.get(0))),
                 () -> assertEquals(1L, requireIntConstant(function, initArgs.get(2))),
                 () -> assertEquals(GdIntType.INT, requireVariableType(function, initArgs.get(1))),
-                () -> assertEquals("limit", unpack.variantId()),
+                // The range operand may be the parameter slot itself or a materialized
+                // Variant copy of it. Assert the unpack source type, not the temp name.
+                () -> assertEquals(GdVariantType.VARIANT, requireVariableType(function, unpack.variantId())),
                 () -> assertEquals(1, countInstructions(allInstructions(function), UnpackVariantInsn.class))
         );
     }
