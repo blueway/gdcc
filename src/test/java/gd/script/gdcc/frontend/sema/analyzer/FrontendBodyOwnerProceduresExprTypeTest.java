@@ -1673,15 +1673,19 @@ class FrontendBodyOwnerProceduresExprTypeTest {
         assertEquals(FrontendExpressionTypeStatus.RESOLVED, rawWidened.status());
         assertEquals("Array", rawWidened.publishedType().getTypeName());
 
+        // GDScript promotes the int operand when the other side is float, and Godot's
+        // operator metadata exposes the mixed signatures (int + float, float + int, ...).
         var mixedIntFloat = analyzed.analysisData().expressionTypes().get(
                 findVariable(statements, "mixed_int_float").value()
         );
-        assertEquals(FrontendExpressionTypeStatus.FAILED, mixedIntFloat.status());
+        assertEquals(FrontendExpressionTypeStatus.RESOLVED, mixedIntFloat.status());
+        assertEquals("float", mixedIntFloat.publishedType().getTypeName());
 
         var mixedFloatInt = analyzed.analysisData().expressionTypes().get(
                 findVariable(statements, "mixed_float_int").value()
         );
-        assertEquals(FrontendExpressionTypeStatus.FAILED, mixedFloatInt.status());
+        assertEquals(FrontendExpressionTypeStatus.RESOLVED, mixedFloatInt.status());
+        assertEquals("float", mixedFloatInt.publishedType().getTypeName());
 
         var invalid = analyzed.analysisData().expressionTypes().get(findVariable(statements, "invalid").value());
         assertEquals(FrontendExpressionTypeStatus.FAILED, invalid.status());
@@ -1694,16 +1698,10 @@ class FrontendBodyOwnerProceduresExprTypeTest {
         assertEquals("bool", notInMembership.publishedType().getTypeName());
 
         var expressionDiagnostics = diagnosticsByCategory(analyzed, "sema.expression_resolution");
-        assertEquals(3, expressionDiagnostics.size());
-        assertTrue(expressionDiagnostics.stream().anyMatch(diagnostic -> diagnostic.message().contains(
-                "Binary operator '+' is not defined for operand types 'int' and 'float'"
-        )));
-        assertTrue(expressionDiagnostics.stream().anyMatch(diagnostic -> diagnostic.message().contains(
-                "Binary operator '+' is not defined for operand types 'float' and 'int'"
-        )));
-        assertTrue(expressionDiagnostics.stream().anyMatch(diagnostic -> diagnostic.message().contains(
+        assertEquals(1, expressionDiagnostics.size());
+        assertTrue(expressionDiagnostics.getFirst().message().contains(
                 "Binary operator '&' is not defined for operand types 'String' and 'int'"
-        )));
+        ));
 
         assertTrue(diagnosticsByCategory(analyzed, "sema.unsupported_expression_route").isEmpty());
 

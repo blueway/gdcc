@@ -872,16 +872,10 @@ public final class FrontendExpressionSemanticSupport {
             );
         }
 
-        // Godot metadata exposes mixed int/float operator entries, but this frontend boundary
-        // intentionally does not turn ordinary typed-boundary widening into operator promotion.
-        if (isMixedIntFloatScalarPair(publishedLeftType, publishedRightType)) {
-            return FrontendExpressionType.failed(
-                    "Binary operator '" + actualOperatorText
-                            + "' is not defined for operand types '" + publishedLeftType.getTypeName()
-                            + "' and '" + publishedRightType.getTypeName() + "'"
-            );
-        }
-
+        // GDScript promotes the int operand when the other side is float. Godot's builtin
+        // metadata already exposes the mixed entries (int + float, float + int, ...) and the
+        // backend primitive fast path evaluates them as float math, so the exact metadata
+        // lookup below is the single source of truth for which mixed pairs exist.
         var exactReturnType = resolveBinaryExactReturnType(
                 classRegistry,
                 operator,
@@ -2293,11 +2287,6 @@ public final class FrontendExpressionSemanticSupport {
     ) {
         return operandType.status() == FrontendExpressionTypeStatus.DYNAMIC
                 || publishedOperandType instanceof GdVariantType;
-    }
-
-    private static boolean isMixedIntFloatScalarPair(@NotNull GdType leftType, @NotNull GdType rightType) {
-        return leftType instanceof GdIntType && rightType instanceof GdFloatType
-                || leftType instanceof GdFloatType && rightType instanceof GdIntType;
     }
 
     private static @Nullable GdType resolveBinaryExactReturnType(

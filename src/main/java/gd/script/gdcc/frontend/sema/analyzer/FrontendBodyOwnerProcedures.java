@@ -1905,6 +1905,27 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
             return computed;
         }
 
+
+        /// Overlays GDScript `is`-guard narrowing on one identifier use. The guard facts come from
+        /// the already-published type-test targets, so this stays a pure read of frozen facts.
+        private @NotNull FrontendExpressionType narrowIdentifierExpressionType(
+                @NotNull IdentifierExpression identifierExpression,
+                @NotNull FrontendExpressionType published
+        ) {
+            if (published.status() != FrontendExpressionTypeStatus.RESOLVED
+                    || !(published.publishedType() instanceof GdObjectType objectType)) {
+                return published;
+            }
+            var narrowed = visibleValueResolver(context).narrowedObjectTypeAt(
+                    identifierExpression,
+                    identifierExpression.name().trim()
+            );
+            if (narrowed == null || narrowed.equals(objectType)) {
+                return published;
+            }
+            return FrontendExpressionType.resolved(narrowed);
+        }
+
         private void checkExpectedTypeMatchesFinal(
                 @NotNull Expression expression,
                 @Nullable GdType expectedType
@@ -1958,9 +1979,12 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
                 case SelfExpression selfExpression -> expressionSemanticSupport
                         .resolveSelfExpressionType(selfExpression)
                         .expressionType();
-                case IdentifierExpression identifierExpression -> expressionSemanticSupport
-                        .resolveIdentifierExpressionType(identifierExpression)
-                        .expressionType();
+                case IdentifierExpression identifierExpression -> narrowIdentifierExpressionType(
+                        identifierExpression,
+                        expressionSemanticSupport
+                                .resolveIdentifierExpressionType(identifierExpression)
+                                .expressionType()
+                );
                 case AttributeExpression attributeExpression ->
                         resolveAttributeExpressionType(attributeExpression, finalizeWindow);
                 case AssignmentExpression assignmentExpression -> resolveAssignmentExpressionType(

@@ -11,12 +11,20 @@ import gd.script.gdcc.scope.Scope;
 import gd.script.gdcc.scope.ScopeLookupResult;
 import gd.script.gdcc.scope.ScopeValue;
 import gd.script.gdcc.scope.ScopeValueKind;
+import dev.superice.gdparser.frontend.ast.BinaryExpression;
 import dev.superice.gdparser.frontend.ast.Block;
 import dev.superice.gdparser.frontend.ast.DeclarationKind;
+import dev.superice.gdparser.frontend.ast.IdentifierExpression;
+import dev.superice.gdparser.frontend.ast.IfStatement;
 import dev.superice.gdparser.frontend.ast.Node;
 import dev.superice.gdparser.frontend.ast.Parameter;
 import dev.superice.gdparser.frontend.ast.Statement;
+import dev.superice.gdparser.frontend.ast.TypeTestExpression;
 import dev.superice.gdparser.frontend.ast.VariableDeclaration;
+import dev.superice.gdparser.frontend.ast.WhileStatement;
+import gd.script.gdcc.frontend.sema.FrontendTypeTestTarget;
+import gd.script.gdcc.type.GdObjectType;
+import gd.script.gdcc.type.GdType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -153,6 +161,54 @@ public final class FrontendVisibleValueResolver {
         for (var child : node.getChildren()) {
             indexSubtree(child, node);
         }
+    }
+
+
+    /// GDScript narrows an object-typed value inside an `is` guard: on the right-hand side of a
+    /// following `and` operand, and in the body of an `if`/`while`. GDCC's scope model is not
+    /// flow-sensitive, so the type resolver overlays this narrowed type on the identifier use.
+    public @Nullable GdType narrowedObjectTypeAt(@NotNull Node useSite, @NotNull String name) {
+        Node current = useSite;
+        while (true) {
+            var parent = parentByNode.get(current);
+            if (parent == null) {
+                return null;
+            }
+            GdType fact = null;
+            if (parent instanceof BinaryExpression binaryExpression
+                    && "and".equals(binaryExpression.operator())
+                    && current == binaryExpression.right()) {
+                fact = firstObjectTypeTestOn(binaryExpression.left(), name);
+            } else if (parent instanceof IfStatement ifStatement && current == ifStatement.body()) {
+                fact = firstObjectTypeTestOn(ifStatement.condition(), name);
+            } else if (parent instanceof WhileStatement whileStatement && current == whileStatement.body()) {
+                fact = firstObjectTypeTestOn(whileStatement.condition(), name);
+            }
+            if (fact != null) {
+                return fact;
+            }
+            current = parent;
+        }
+    }
+
+    private @Nullable GdType firstObjectTypeTestOn(@NotNull Node expression, @NotNull String name) {
+        if (expression instanceof TypeTestExpression typeTestExpression
+                && !typeTestExpression.negated()
+                && typeTestExpression.value() instanceof IdentifierExpression identifierExpression
+                && identifierExpression.name().trim().equals(name)) {
+            if (analysisData.typeTestTargets().get(typeTestExpression)
+                    instanceof FrontendTypeTestTarget.TargetKnown(var type)
+                    && type instanceof GdObjectType) {
+                return type;
+            }
+            return null;
+        }
+        if (expression instanceof BinaryExpression binaryExpression
+                && "and".equals(binaryExpression.operator())) {
+            var left = firstObjectTypeTestOn(binaryExpression.left(), name);
+            return left != null ? left : firstObjectTypeTestOn(binaryExpression.right(), name);
+        }
+        return null;
     }
 
     private static boolean isCallableLocalKind(@NotNull ScopeValueKind kind) {
