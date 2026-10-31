@@ -169,14 +169,23 @@ public final class FrontendLoweringBuildCfgPass implements FrontendLoweringPass 
     ) {
         try {
             return build.get();
-        } catch (RuntimeException exception) {
-            throw new IllegalArgumentException(
-                    describeContext(functionContext)
-                            + " failed to build frontend CFG: "
-                            + exception.getMessage(),
-                    exception
-            );
+        } catch (IllegalStateException exception) {
+            // Preserve the original failure type: callers and tests distinguish contract
+            // violations (IllegalStateException) from malformed-input rejections
+            // (IllegalArgumentException), and the context wrapper must not erase that.
+            throw new IllegalStateException(contextualCfgFailureMessage(functionContext, exception), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(contextualCfgFailureMessage(functionContext, exception), exception);
         }
+    }
+
+    private static @NotNull String contextualCfgFailureMessage(
+            @NotNull FunctionLoweringContext functionContext,
+            @NotNull RuntimeException exception
+    ) {
+        return describeContext(functionContext)
+                + " failed to build frontend CFG: "
+                + exception.getMessage();
     }
 
     private static @NotNull String describeContext(@NotNull FunctionLoweringContext functionContext) {
