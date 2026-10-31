@@ -1597,6 +1597,65 @@ class FrontendBodyOwnerProceduresExprTypeTest {
     }
 
     @Test
+    void analyzeNarrowsObjectTypeInsideIsGuards() throws Exception {
+        var analyzed = analyze(
+                "expr_type_is_guard_narrowing.gd",
+                """
+                        class_name ExprTypeIsGuardNarrowing
+                        extends Node
+
+                        func ping(node: Node) -> float:
+                            if node is Node2D and node.position.x > 0.0:
+                                return node.position.x
+                            if node is Node2D:
+                                return node.position.x
+                            return 0.0
+                        """
+        );
+
+        // Without `is`-guard narrowing, both `node.position` member lookups fail on `Node`.
+        assertTrue(diagnosticsByCategory(analyzed, "sema.expression_resolution").isEmpty());
+        assertTrue(diagnosticsByCategory(analyzed, "sema.member_resolution").isEmpty());
+        assertTrue(diagnosticsByCategory(analyzed, "sema.call_resolution").isEmpty());
+    }
+
+    @Test
+    void analyzeDoesNotNarrowExplicitCastOperandInsideIsGuard() throws Exception {
+        var analyzed = analyze(
+                "expr_type_explicit_cast_operand.gd",
+                """
+                        class_name ExprTypeExplicitCastOperand
+                        extends RefCounted
+
+                        class Base extends RefCounted:
+                            pass
+
+                        class Child extends Base:
+                            pass
+
+                        func ping(resource: Base) -> Child:
+                            if resource is Child:
+                                var child: Child = resource as Child
+                                return child
+                            return null
+                        """
+        );
+
+        var pingFunction = findFunction(analyzed.ast(), "ping");
+        var cast = findNode(pingFunction, CastExpression.class, _ -> true);
+        var operand = assertInstanceOf(IdentifierExpression.class, cast.value());
+        var operandType = analyzed.analysisData().expressionTypes().get(operand);
+        assertNotNull(operandType);
+        assertEquals(FrontendExpressionTypeStatus.RESOLVED, operandType.status());
+        // The explicit cast owns the conversion; narrowing the identifier to Child here would
+        // let lowering elide the cast and assign a Base slot to a Child slot.
+        assertEquals("Base", operandType.publishedType().getTypeName());
+
+        assertTrue(diagnosticsByCategory(analyzed, "sema.expression_resolution").isEmpty());
+        assertTrue(diagnosticsByCategory(analyzed, "sema.member_resolution").isEmpty());
+    }
+
+    @Test
     void analyzePublishesBinaryExpressionTypesWithoutDeferredDiagnostics() throws Exception {
         var analyzed = analyze(
                 "expr_type_binary_semantics.gd",

@@ -25,8 +25,6 @@ import gd.script.gdcc.type.GdArrayType;
 import gd.script.gdcc.type.GdBoolType;
 import gd.script.gdcc.type.GdCallableType;
 import gd.script.gdcc.type.GdDictionaryType;
-import gd.script.gdcc.type.GdFloatType;
-import gd.script.gdcc.type.GdIntType;
 import gd.script.gdcc.type.GdNilType;
 import gd.script.gdcc.type.GdObjectType;
 import gd.script.gdcc.type.GdSignalType;

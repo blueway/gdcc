@@ -250,7 +250,7 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
         }
         var initializerType = guardedFailure != null
                 ? guardedFailure
-                : new BodyExpressionResolver(context).resolveExpressionType(initializer, false);
+                : new BodyExpressionResolver(context, visibleValueResolver(context)).resolveExpressionType(initializer, false);
         var stableType = stableLocalTypeOrNull(initializerType);
         if (stableType == null) {
             return;
@@ -268,7 +268,7 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
 
     @Override
     public void runChainBinding(@NotNull FrontendSuiteContext context, @NotNull Node root) {
-        var resolver = new BodyExpressionResolver(context);
+        var resolver = new BodyExpressionResolver(context, visibleValueResolver(context));
         forEachExpression(root, expression -> {
             if (expression instanceof AttributeExpression attributeExpression) {
                 var reduced = resolver.reduceAttributeExpression(attributeExpression);
@@ -287,7 +287,7 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
 
     @Override
     public void runExprType(@NotNull FrontendSuiteContext context, @NotNull Node root) {
-        var resolver = new BodyExpressionResolver(context);
+        var resolver = new BodyExpressionResolver(context, visibleValueResolver(context));
         publishRootExpressionTypes(context, resolver, root);
         if (root instanceof ExpressionStatement expressionStatement) {
             reportDiscardedExpressionWarning(
@@ -316,7 +316,7 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
             @NotNull Expression defaultRoot,
             @Nullable GdType expectedType
     ) {
-        var resolver = new BodyExpressionResolver(context);
+        var resolver = new BodyExpressionResolver(context, visibleValueResolver(context));
         publishExpressionType(context, resolver, defaultRoot, false, contextualExpectedOrNull(expectedType));
     }
 
@@ -1828,11 +1828,19 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
         private final @NotNull FrontendChainReductionFacade chainReduction;
         private final @NotNull FrontendAssignmentSemanticSupport.Context assignmentSemanticContext;
         private final @NotNull FrontendExpressionSemanticSupport expressionSemanticSupport;
+        private final @NotNull FrontendVisibleValueResolver visibleValueResolver;
         private final @NotNull IdentityHashMap<AssignmentExpression, FrontendAssignmentSemanticSupport.AssignmentUsage>
                 assignmentUsages = new IdentityHashMap<>();
 
-        private BodyExpressionResolver(@NotNull FrontendSuiteContext context) {
+        private BodyExpressionResolver(
+                @NotNull FrontendSuiteContext context,
+                @NotNull FrontendVisibleValueResolver visibleValueResolver
+        ) {
             this.context = Objects.requireNonNull(context, "context must not be null");
+            this.visibleValueResolver = Objects.requireNonNull(
+                    visibleValueResolver,
+                    "visibleValueResolver must not be null"
+            );
             chainReduction = new FrontendChainReductionFacade(
                     context.analysisData(),
                     context.analysisData().scopesByAst(),
@@ -1841,7 +1849,7 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
                     context::propertyInitializerContext,
                     context.classRegistry(),
                     this::resolveExpressionDependency,
-                    identifier -> context.typedEnvironment().symbolBinding(identifier)
+                    this::narrowedSymbolBindingForIsGuard
             );
             assignmentSemanticContext = FrontendAssignmentSemanticSupport.createContext(
                     context.analysisData().symbolBindings(),
@@ -1906,24 +1914,73 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
         }
 
 
-        /// Overlays GDScript `is`-guard narrowing on one identifier use. The guard facts come from
-        /// the already-published type-test targets, so this stays a pure read of frozen facts.
-        private @NotNull FrontendExpressionType narrowIdentifierExpressionType(
-                @NotNull IdentifierExpression identifierExpression,
-                @NotNull FrontendExpressionType published
+        /// Chain reduction resolves identifier heads from the published binding, not from
+        /// `expressionTypes()`. Overlay the same `is`-guard narrowing on the binding value so
+        /// member lookup on `event.pressed` sees `InputEventKey`, not `InputEvent`.
+        private @Nullable FrontendBinding narrowedSymbolBindingForIsGuard(
+                @NotNull IdentifierExpression identifierExpression
         ) {
-            if (published.status() != FrontendExpressionTypeStatus.RESOLVED
-                    || !(published.publishedType() instanceof GdObjectType objectType)) {
-                return published;
+            var binding = context.typedEnvironment().symbolBinding(identifierExpression);
+            if (binding == null || binding.resolvedValue() == null) {
+                return binding;
             }
-            var narrowed = visibleValueResolver(context).narrowedObjectTypeAt(
-                    identifierExpression,
-                    identifierExpression.name().trim()
-            );
+            var value = binding.resolvedValue();
+            if (!(value.type() instanceof GdObjectType objectType)) {
+                return binding;
+            }
+            var narrowed = narrowedObjectTypeAt(identifierExpression);
             if (narrowed == null || narrowed.equals(objectType)) {
+                return binding;
+            }
+            return binding.withResolvedValue(new ScopeValue(
+                    value.name(),
+                    narrowed,
+                    value.kind(),
+                    value.declaration(),
+                    value.constant(),
+                    value.writable(),
+                    value.staticMember()
+            ));
+        }
+
+        private @Nullable GdType narrowedObjectTypeAt(
+                @NotNull IdentifierExpression identifierExpression
+        ) {
+            return visibleValueResolver.narrowedObjectTypeAt(
+                    identifierExpression,
+                    identifierExpression.name().trim(),
+                    this::typeTestTargetFor
+            );
+        }
+
+        private @Nullable FrontendTypeTestTarget typeTestTargetFor(
+                @NotNull TypeTestExpression typeTestExpression
+        ) {
+            var ownerLocal = typeTestTargets.get(typeTestExpression);
+            if (ownerLocal != null) {
+                return ownerLocal;
+            }
+            var published = context.typedEnvironment().typeTestTarget(typeTestExpression);
+            if (published != null) {
                 return published;
             }
-            return FrontendExpressionType.resolved(narrowed);
+            // Chain binding runs before expression typing, so no type-test target is published
+            // yet. Resolve the syntactic target through the same declared-type path that
+            // expression typing uses; only object targets participate in narrowing.
+            var typeText = typeTestExpression.targetType().sourceText().trim();
+            if (typeText.isEmpty() || "null".equals(typeText)) {
+                return null;
+            }
+            var scope = context.analysisData().scopesByAst().get(typeTestExpression);
+            if (scope == null) {
+                scope = context.analysisData().scopesByAst().get(typeTestExpression.value());
+            }
+            if (scope == null) {
+                scope = context.classRegistry();
+            }
+            var resolved = context.analysisData().moduleSkeleton()
+                    .tryResolveSourceFacingDeclaredType(scope, typeText);
+            return resolved != null ? new FrontendTypeTestTarget.TargetKnown(resolved) : null;
         }
 
         private void checkExpectedTypeMatchesFinal(
@@ -1979,12 +2036,9 @@ public final class FrontendBodyOwnerProcedures implements FrontendStatementResol
                 case SelfExpression selfExpression -> expressionSemanticSupport
                         .resolveSelfExpressionType(selfExpression)
                         .expressionType();
-                case IdentifierExpression identifierExpression -> narrowIdentifierExpressionType(
-                        identifierExpression,
-                        expressionSemanticSupport
-                                .resolveIdentifierExpressionType(identifierExpression)
-                                .expressionType()
-                );
+                case IdentifierExpression identifierExpression -> expressionSemanticSupport
+                        .resolveIdentifierExpressionType(identifierExpression)
+                        .expressionType();
                 case AttributeExpression attributeExpression ->
                         resolveAttributeExpressionType(attributeExpression, finalizeWindow);
                 case AssignmentExpression assignmentExpression -> resolveAssignmentExpressionType(

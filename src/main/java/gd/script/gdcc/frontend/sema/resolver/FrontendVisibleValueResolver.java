@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 
 /// Frontend-only visible-value resolver for executable-body use sites.
 ///
@@ -167,7 +168,15 @@ public final class FrontendVisibleValueResolver {
     /// GDScript narrows an object-typed value inside an `is` guard: on the right-hand side of a
     /// following `and` operand, and in the body of an `if`/`while`. GDCC's scope model is not
     /// flow-sensitive, so the type resolver overlays this narrowed type on the identifier use.
-    public @Nullable GdType narrowedObjectTypeAt(@NotNull Node useSite, @NotNull String name) {
+    ///
+    /// The target lookup is supplied by the caller because a guard and its first use can live in
+    /// the same expression root: those targets are still owner-local and have not reached the
+    /// typed environment / analysis-data side tables yet.
+    public @Nullable GdType narrowedObjectTypeAt(
+            @NotNull Node useSite,
+            @NotNull String name,
+            @NotNull Function<TypeTestExpression, FrontendTypeTestTarget> typeTestTargetLookup
+    ) {
         Node current = useSite;
         while (true) {
             var parent = parentByNode.get(current);
@@ -178,11 +187,11 @@ public final class FrontendVisibleValueResolver {
             if (parent instanceof BinaryExpression binaryExpression
                     && "and".equals(binaryExpression.operator())
                     && current == binaryExpression.right()) {
-                fact = firstObjectTypeTestOn(binaryExpression.left(), name);
+                fact = firstObjectTypeTestOn(binaryExpression.left(), name, typeTestTargetLookup);
             } else if (parent instanceof IfStatement ifStatement && current == ifStatement.body()) {
-                fact = firstObjectTypeTestOn(ifStatement.condition(), name);
+                fact = firstObjectTypeTestOn(ifStatement.condition(), name, typeTestTargetLookup);
             } else if (parent instanceof WhileStatement whileStatement && current == whileStatement.body()) {
-                fact = firstObjectTypeTestOn(whileStatement.condition(), name);
+                fact = firstObjectTypeTestOn(whileStatement.condition(), name, typeTestTargetLookup);
             }
             if (fact != null) {
                 return fact;
@@ -191,22 +200,28 @@ public final class FrontendVisibleValueResolver {
         }
     }
 
-    private @Nullable GdType firstObjectTypeTestOn(@NotNull Node expression, @NotNull String name) {
+    private @Nullable GdType firstObjectTypeTestOn(
+            @NotNull Node expression,
+            @NotNull String name,
+            @NotNull Function<TypeTestExpression, FrontendTypeTestTarget> typeTestTargetLookup
+    ) {
         if (expression instanceof TypeTestExpression typeTestExpression
                 && !typeTestExpression.negated()
                 && typeTestExpression.value() instanceof IdentifierExpression identifierExpression
                 && identifierExpression.name().trim().equals(name)) {
-            if (analysisData.typeTestTargets().get(typeTestExpression)
-                    instanceof FrontendTypeTestTarget.TargetKnown(var type)
-                    && type instanceof GdObjectType) {
-                return type;
+            if (typeTestTargetLookup.apply(typeTestExpression)
+                    instanceof FrontendTypeTestTarget.TargetKnown known
+                    && known.type() instanceof GdObjectType) {
+                return known.type();
             }
             return null;
         }
         if (expression instanceof BinaryExpression binaryExpression
                 && "and".equals(binaryExpression.operator())) {
-            var left = firstObjectTypeTestOn(binaryExpression.left(), name);
-            return left != null ? left : firstObjectTypeTestOn(binaryExpression.right(), name);
+            var left = firstObjectTypeTestOn(binaryExpression.left(), name, typeTestTargetLookup);
+            return left != null
+                    ? left
+                    : firstObjectTypeTestOn(binaryExpression.right(), name, typeTestTargetLookup);
         }
         return null;
     }
