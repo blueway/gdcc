@@ -406,18 +406,19 @@ class RpcJsonCodecTest {
         );
         assertEnumWireValues(
                 TargetPlatform.class,
-                Map.of(
-                        TargetPlatform.WINDOWS_X86_64, "WINDOWS_X86_64",
-                        TargetPlatform.WINDOWS_AARCH64, "WINDOWS_AARCH64",
-                        TargetPlatform.LINUX_X86_64, "LINUX_X86_64",
-                        TargetPlatform.LINUX_AARCH64, "LINUX_AARCH64",
-                        TargetPlatform.LINUX_RISCV64, "LINUX_RISCV64",
-                        TargetPlatform.MACOS_X86_64, "MACOS_X86_64",
-                        TargetPlatform.MACOS_AARCH64, "MACOS_AARCH64",
-                        TargetPlatform.ANDROID_X86_64, "ANDROID_X86_64",
-                        TargetPlatform.ANDROID_AARCH64, "ANDROID_AARCH64",
-                        TargetPlatform.ANDROID_ARM32, "ANDROID_ARM32",
-                        TargetPlatform.WEB_WASM32, "WEB_WASM32"
+                // Map.of caps out at ten pairs, and this enum already has eleven.
+                Map.ofEntries(
+                        Map.entry(TargetPlatform.WINDOWS_X86_64, "WINDOWS_X86_64"),
+                        Map.entry(TargetPlatform.WINDOWS_AARCH64, "WINDOWS_AARCH64"),
+                        Map.entry(TargetPlatform.LINUX_X86_64, "LINUX_X86_64"),
+                        Map.entry(TargetPlatform.LINUX_AARCH64, "LINUX_AARCH64"),
+                        Map.entry(TargetPlatform.LINUX_RISCV64, "LINUX_RISCV64"),
+                        Map.entry(TargetPlatform.MACOS_X86_64, "MACOS_X86_64"),
+                        Map.entry(TargetPlatform.MACOS_AARCH64, "MACOS_AARCH64"),
+                        Map.entry(TargetPlatform.ANDROID_X86_64, "ANDROID_X86_64"),
+                        Map.entry(TargetPlatform.ANDROID_AARCH64, "ANDROID_AARCH64"),
+                        Map.entry(TargetPlatform.ANDROID_ARM32, "ANDROID_ARM32"),
+                        Map.entry(TargetPlatform.WEB_WASM32, "WEB_WASM32")
                 )
         );
         assertEnumWireValues(
