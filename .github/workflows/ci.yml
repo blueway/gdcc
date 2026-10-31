@@ -35,24 +35,11 @@ jobs:
             os: ubuntu-24.04-arm
             id: linux-aarch64
             upload_jar: false
-          - name: Windows x64
-            os: windows-latest
-            id: windows-x64
-            upload_jar: false
-          - name: Windows x64 (Editor Addon)
-            os: windows-latest
-            id: windows-x64-editor-addon
-            upload_jar: false
-            editor_addon_only: true
           - name: Linux x64 (Editor Addon)
             os: ubuntu-latest
             id: linux-x64-editor-addon
             upload_jar: false
             editor_addon_only: true
-          - name: macOS aarch64
-            os: macos-latest
-            id: macos-aarch64
-            upload_jar: false
 
     defaults:
       run:
@@ -225,22 +212,11 @@ jobs:
           set -euo pipefail
           bash build-script/build-tinycc-bundle-linux-x86_64.sh
 
-      - name: Build tinycc bundle (Windows x64)
-        if: matrix.id == 'windows-x64'
-        shell: cmd
-        run: build-script\build-tinycc-bundle-windows-x86_64.bat
-
       - name: Build tinycc bundle (Linux aarch64)
         if: matrix.id == 'linux-aarch64'
         run: |
           set -euo pipefail
           bash build-script/build-tinycc-bundle-linux-aarch64.sh
-
-      - name: Build tinycc bundle (macOS aarch64)
-        if: matrix.id == 'macos-aarch64'
-        run: |
-          set -euo pipefail
-          bash build-script/build-tinycc-bundle-macos-aarch64.sh
 
       - name: Run unit tests
         env:
