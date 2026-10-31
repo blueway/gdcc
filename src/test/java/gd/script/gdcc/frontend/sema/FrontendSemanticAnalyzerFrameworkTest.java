@@ -595,15 +595,26 @@ class FrontendSemanticAnalyzerFrameworkTest {
         );
         assertEquals("int", result.expressionTypes().get(readyInitializer).publishedType().getTypeName());
 
-        assertNull(result.symbolBindings().get(aliasWorkerHead));
-        assertNull(result.resolvedCalls().get(aliasBuildStep));
-        assertNull(result.expressionTypes().get(aliasInitializer));
+        var aliasWorkerBinding = result.symbolBindings().get(aliasWorkerHead);
+        assertNotNull(aliasWorkerBinding);
+        assertEquals(FrontendBindingKind.TYPE_META, aliasWorkerBinding.kind());
+        var aliasBuildCall = result.resolvedCalls().get(aliasBuildStep);
+        assertNotNull(aliasBuildCall);
+        assertEquals(FrontendCallResolutionStatus.RESOLVED, aliasBuildCall.status());
+        assertEquals(FrontendCallResolutionKind.STATIC_METHOD, aliasBuildCall.callKind());
+        assertEquals(FrontendReceiverKind.TYPE_META, aliasBuildCall.receiverKind());
+        var aliasType = result.expressionTypes().get(aliasInitializer);
+        assertNotNull(aliasType);
+        assertEquals(FrontendExpressionTypeStatus.RESOLVED, aliasType.status());
+        assertTrue(aliasType.publishedType().getTypeName().endsWith("Worker"));
         var typeHintDiagnostics = result.diagnostics().asList().stream()
                 .filter(diagnostic -> diagnostic.category().equals("sema.type_hint"))
                 .toList();
-        assertEquals(1, typeHintDiagnostics.size());
-        assertTrue(typeHintDiagnostics.getFirst().message().contains("ready_value"));
-        assertTrue(typeHintDiagnostics.getFirst().message().contains(": int"));
+        assertEquals(2, typeHintDiagnostics.size());
+        assertTrue(typeHintDiagnostics.stream().anyMatch(diagnostic ->
+                diagnostic.message().contains("ready_value") && diagnostic.message().contains(": int")));
+        assertTrue(typeHintDiagnostics.stream().anyMatch(diagnostic ->
+                diagnostic.message().contains("Alias")));
         assertTrue(result.diagnostics().asList().stream().noneMatch(diagnostic ->
                 diagnostic.category().equals("sema.type_check")
         ));

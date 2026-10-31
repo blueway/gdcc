@@ -235,7 +235,7 @@ class FrontendBodyOwnerProceduresExprTypeTest {
     }
 
     @Test
-    void analyzePublishesSupportedPropertyInitializerExpressionTypesWithoutOpeningClassConstInitializers() throws Exception {
+    void analyzePublishesSupportedPropertyInitializerExpressionTypesForVarAndClassConstInitializers() throws Exception {
         var analyzed = analyze(
                 "expr_type_property_initializers.gd",
                 """
@@ -288,7 +288,10 @@ class FrontendBodyOwnerProceduresExprTypeTest {
         assertEquals("int", readyValueType.publishedType().getTypeName());
 
         assertNull(analyzed.analysisData().expressionTypes().get(workerHead));
-        assertNull(analyzed.analysisData().expressionTypes().get(aliasDeclaration.value()));
+        var aliasInitializerType = analyzed.analysisData().expressionTypes().get(aliasDeclaration.value());
+        assertNotNull(aliasInitializerType);
+        assertEquals(FrontendExpressionTypeStatus.RESOLVED, aliasInitializerType.status());
+        assertTrue(aliasInitializerType.publishedType().getTypeName().endsWith("Worker"));
         assertTrue(diagnosticsByCategory(analyzed, "sema.expression_resolution").isEmpty());
         assertTrue(diagnosticsByCategory(analyzed, "sema.unsupported_expression_route").isEmpty());
         assertTrue(diagnosticsByCategory(analyzed, "sema.discarded_expression").isEmpty());
@@ -1648,8 +1651,11 @@ class FrontendBodyOwnerProceduresExprTypeTest {
         assertNotNull(operandType);
         assertEquals(FrontendExpressionTypeStatus.RESOLVED, operandType.status());
         // The explicit cast owns the conversion; narrowing the identifier to Child here would
-        // let lowering elide the cast and assign a Base slot to a Child slot.
-        assertEquals("Base", operandType.publishedType().getTypeName());
+        // let lowering elide the cast and assign a Base slot to a Child slot. Nested class types
+        // carry the module's canonical prefix, so compare the terminal class name.
+        var operandTypeName = operandType.publishedType().getTypeName();
+        assertTrue(operandTypeName.endsWith("Base"), operandTypeName);
+        assertFalse(operandTypeName.endsWith("Child"), operandTypeName);
 
         assertTrue(diagnosticsByCategory(analyzed, "sema.expression_resolution").isEmpty());
         assertTrue(diagnosticsByCategory(analyzed, "sema.member_resolution").isEmpty());

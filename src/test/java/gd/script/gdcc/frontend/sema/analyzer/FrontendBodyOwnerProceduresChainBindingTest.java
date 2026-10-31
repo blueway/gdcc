@@ -314,7 +314,7 @@ class FrontendBodyOwnerProceduresChainBindingTest {
     }
 
     @Test
-    void analyzePublishesPropertyInitializerChainFactsWithoutOpeningClassConstInitializers() throws Exception {
+    void analyzePublishesPropertyInitializerChainFactsForVarAndClassConstInitializers() throws Exception {
         var analyzed = analyze(
                 "property_initializer_routes.gd",
                 """
@@ -370,7 +370,11 @@ class FrontendBodyOwnerProceduresChainBindingTest {
         assertEquals(FrontendCallResolutionKind.INSTANCE_METHOD, resolvedRead.callKind());
         assertEquals(FrontendReceiverKind.INSTANCE, resolvedRead.receiverKind());
 
-        assertNull(analyzed.analysisData().resolvedCalls().get(aliasBuildStep));
+        var resolvedAliasBuild = analyzed.analysisData().resolvedCalls().get(aliasBuildStep);
+        assertNotNull(resolvedAliasBuild);
+        assertEquals(FrontendCallResolutionStatus.RESOLVED, resolvedAliasBuild.status());
+        assertEquals(FrontendCallResolutionKind.STATIC_METHOD, resolvedAliasBuild.callKind());
+        assertEquals(FrontendReceiverKind.TYPE_META, resolvedAliasBuild.receiverKind());
         assertTrue(diagnosticsByCategory(analyzed.analysisData(), "sema.member_resolution").isEmpty());
         assertTrue(diagnosticsByCategory(analyzed.analysisData(), "sema.call_resolution").isEmpty());
         assertTrue(diagnosticsByCategory(analyzed.analysisData(), "sema.unsupported_chain_route").isEmpty());

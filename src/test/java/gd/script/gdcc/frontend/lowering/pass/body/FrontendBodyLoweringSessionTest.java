@@ -439,22 +439,19 @@ class FrontendBodyLoweringSessionTest {
     }
 
     @Test
-    void materializeFrontendBoundaryValueRejectsStringFamilyNeighborBoundaries() throws Exception {
+    void materializeFrontendBoundaryValueMaterializesStringToNodePathAndRejectsStringNameToInt() throws Exception {
         var session = prepareSession();
         var nodePathBlock = new LirBasicBlock("string_to_node_path");
         var intBlock = new LirBasicBlock("string_name_to_int");
         session.ensureVariable("source_text", GdStringType.STRING);
         session.ensureVariable("source_name", GdStringNameType.STRING_NAME);
 
-        var nodePathException = assertThrows(
-                IllegalStateException.class,
-                () -> session.materializeFrontendBoundaryValue(
-                        nodePathBlock,
-                        "source_text",
-                        GdStringType.STRING,
-                        GdNodePathType.NODE_PATH,
-                        "string_to_node_path_boundary"
-                )
+        var nodePathSlotId = session.materializeFrontendBoundaryValue(
+                nodePathBlock,
+                "source_text",
+                GdStringType.STRING,
+                GdNodePathType.NODE_PATH,
+                "string_to_node_path_boundary"
         );
         var intException = assertThrows(
                 IllegalStateException.class,
@@ -467,12 +464,20 @@ class FrontendBodyLoweringSessionTest {
                 )
         );
 
+        var nodePathVariable = session.targetFunction().getVariableById(nodePathSlotId);
+        assertNotNull(nodePathVariable);
+        var nodePathInsn = assertInstanceOf(
+                ConstructBuiltinInsn.class,
+                nodePathBlock.getNonTerminatorInstructions().getFirst()
+        );
+
         assertAll(
-                () -> assertTrue(nodePathException.getMessage().contains("string_to_node_path_boundary"), nodePathException.getMessage()),
-                () -> assertTrue(nodePathException.getMessage().contains("rejects source type 'String'"), nodePathException.getMessage()),
+                () -> assertNotEquals("source_text", nodePathSlotId),
+                () -> assertEquals(GdNodePathType.NODE_PATH, nodePathVariable.type()),
+                () -> assertEquals(1, nodePathBlock.getNonTerminatorInstructions().size()),
+                () -> assertEquals(nodePathSlotId, nodePathInsn.resultId()),
                 () -> assertTrue(intException.getMessage().contains("string_name_to_int_boundary"), intException.getMessage()),
                 () -> assertTrue(intException.getMessage().contains("rejects source type 'StringName'"), intException.getMessage()),
-                () -> assertTrue(nodePathBlock.getNonTerminatorInstructions().isEmpty()),
                 () -> assertTrue(intBlock.getNonTerminatorInstructions().isEmpty())
         );
     }

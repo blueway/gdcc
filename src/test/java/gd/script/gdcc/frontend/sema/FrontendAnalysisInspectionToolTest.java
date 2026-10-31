@@ -78,11 +78,11 @@ class FrontendAnalysisInspectionToolTest {
     }
 
     @Test
-    void reportShowsDisplayOnlyUnpublishedAttributeCallFactsInsideConstInitializer() throws Exception {
+    void reportShowsPublishedAttributeCallFactsInsideConstInitializer() throws Exception {
         var report = inspect(
-                "const_initializer_unpublished_call.gd",
+                "const_initializer_published_call.gd",
                 """
-                        class_name ConstInitializerUnpublishedCall
+                        class_name ConstInitializerPublishedCall
                         extends RefCounted
                         
                         class Worker:
@@ -93,9 +93,9 @@ class FrontendAnalysisInspectionToolTest {
                         """
         ).report();
 
-        assertTrue(report.contains("call.source = display"));
-        assertTrue(report.contains("status = UNPUBLISHED"));
-        assertTrue(report.contains("callKind = UNPUBLISHED_CALL_FACT"));
+        assertTrue(report.contains("call.source = published"));
+        assertTrue(report.contains("callKind = STATIC_METHOD"));
+        assertFalse(report.contains("UNPUBLISHED_CALL_FACT"));
     }
 
     @Test

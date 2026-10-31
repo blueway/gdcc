@@ -528,10 +528,17 @@ class FrontendAssignmentSemanticSupportTest {
                 GdStringType.STRING,
                 GdStringNameType.STRING_NAME
         ));
-        assertFalse(FrontendAssignmentSemanticSupport.checkAssignmentCompatible(
+        // String -> NodePath is a documented widening boundary and materializes through the
+        // NodePath(String) builtin constructor; the reverse direction stays rejected.
+        assertTrue(FrontendAssignmentSemanticSupport.checkAssignmentCompatible(
                 support,
                 GdNodePathType.NODE_PATH,
                 GdStringType.STRING
+        ));
+        assertFalse(FrontendAssignmentSemanticSupport.checkAssignmentCompatible(
+                support,
+                GdStringType.STRING,
+                GdNodePathType.NODE_PATH
         ));
     }
 

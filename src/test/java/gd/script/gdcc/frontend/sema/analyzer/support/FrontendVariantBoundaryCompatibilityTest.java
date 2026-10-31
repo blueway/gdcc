@@ -262,7 +262,7 @@ class FrontendVariantBoundaryCompatibilityTest {
     }
 
     @Test
-    void stringAndStringNameUseOnlyDocumentedConstructorMaterializationBoundaries() throws Exception {
+    void stringFamilyUsesOnlyDocumentedConstructorMaterializationBoundaries() throws Exception {
         var classRegistry = new ClassRegistry(ExtensionApiLoader.loadDefault());
         assertAll(
                 () -> assertEquals(
@@ -281,8 +281,10 @@ class FrontendVariantBoundaryCompatibilityTest {
                                 GdStringType.STRING
                         )
                 ),
+                // Godot widens String to NodePath at a typed boundary, so the boundary
+                // materializes NodePath(String) through the builtin constructor.
                 () -> assertEquals(
-                        FrontendVariantBoundaryCompatibility.Decision.REJECT,
+                        FrontendVariantBoundaryCompatibility.Decision.ALLOW_WITH_BUILTIN_CONSTRUCTOR,
                         FrontendVariantBoundaryCompatibility.determineFrontendBoundaryDecision(
                                 classRegistry,
                                 GdStringType.STRING,
