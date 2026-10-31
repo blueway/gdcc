@@ -12030,6 +12030,53 @@ class FrontendLoweringBodyInsnPassTest {
         );
     }
 
+    /// A dynamic bound such as `range(limit)` reaches the range intrinsic as a `Variant`.
+    /// The init processor must materialize the ordinary Variant -> int boundary instead of
+    /// handing the Variant slot to the int-only intrinsic and failing in C codegen.
+    @Test
+    void runUnpacksVariantRangeBoundBeforeTheInitIntrinsic() throws Exception {
+        var prepared = prepareContext(
+                "body_insn_for_range_variant_bound.gd",
+                """
+                        class_name BodyInsnForRangeVariantBound
+                        extends RefCounted
+
+                        func ping(limit) -> void:
+                            for i in range(limit):
+                                pass
+                        """,
+                Map.of("BodyInsnForRangeVariantBound", "RuntimeBodyInsnForRangeVariantBound"),
+                true
+        );
+        var pingContext = requireContext(
+                prepared.context().requireFunctionLoweringContexts(),
+                FunctionLoweringContext.Kind.EXECUTABLE_BODY,
+                "RuntimeBodyInsnForRangeVariantBound",
+                "ping"
+        );
+
+        new FrontendLoweringBodyInsnPass().run(prepared.context());
+
+        var function = pingContext.targetFunction();
+        var initArgs = intrinsicArgSlotIds(forRangeIntrinsics(function, "init").getFirst());
+        var unpack = allInstructions(function).stream()
+                .filter(UnpackVariantInsn.class::isInstance)
+                .map(UnpackVariantInsn.class::cast)
+                .filter(insn -> insn.resultId().equals(initArgs.get(1)))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing Variant -> int unpack for the range bound"));
+
+        assertAll(
+                () -> assertFalse(prepared.diagnostics().hasErrors()),
+                () -> assertEquals(3, initArgs.size()),
+                () -> assertEquals(0L, requireIntConstant(function, initArgs.get(0))),
+                () -> assertEquals(1L, requireIntConstant(function, initArgs.get(2))),
+                () -> assertEquals(GdIntType.INT, requireVariableType(function, initArgs.get(1))),
+                () -> assertEquals("limit", unpack.variantId()),
+                () -> assertEquals(1, countInstructions(allInstructions(function), UnpackVariantInsn.class))
+        );
+    }
+
     @Test
     void runLowersIntShorthandForLoopThroughSameRangeIntrinsics() throws Exception {
         var prepared = prepareContext(

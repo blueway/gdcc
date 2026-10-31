@@ -2023,22 +2023,52 @@ final class FrontendSequenceItemInsnLoweringProcessors {
                 @NotNull LirBasicBlock block,
                 @NotNull ForLoopInitItem node
         ) {
-            var operandSlots = node.operandValueIds().stream()
+            var operandValueIds = node.operandValueIds();
+            var operandSlots = operandValueIds.stream()
                     .map(session::slotIdForValue)
                     .toList();
-            var expectedArgCount = node.initOperation().argumentTypes().size();
+            var expectedTypes = node.initOperation().argumentTypes();
+            var expectedArgCount = expectedTypes.size();
             if (operandSlots.size() == expectedArgCount) {
-                return operandSlots;
+                var converted = new ArrayList<String>(operandSlots.size());
+                for (var index = 0; index < operandSlots.size(); index++) {
+                    converted.add(materializeInitArgument(
+                            session,
+                            block,
+                            operandValueIds.get(index),
+                            expectedTypes.get(index),
+                            "for_init_arg_" + index
+                    ));
+                }
+                return List.copyOf(converted);
             }
             return switch (operandSlots.size()) {
                 case 1 -> List.of(
                         session.materializeForLoopIntConstant(block, 0L),
-                        operandSlots.getFirst(),
+                        materializeInitArgument(
+                                session,
+                                block,
+                                operandValueIds.getFirst(),
+                                expectedTypes.get(1),
+                                "for_init_end"
+                        ),
                         session.materializeForLoopIntConstant(block, 1L)
                 );
                 case 2 -> List.of(
-                        operandSlots.get(0),
-                        operandSlots.get(1),
+                        materializeInitArgument(
+                                session,
+                                block,
+                                operandValueIds.get(0),
+                                expectedTypes.get(0),
+                                "for_init_start"
+                        ),
+                        materializeInitArgument(
+                                session,
+                                block,
+                                operandValueIds.get(1),
+                                expectedTypes.get(1),
+                                "for_init_end"
+                        ),
                         session.materializeForLoopIntConstant(block, 1L)
                 );
                 default -> throw new IllegalStateException(
@@ -2046,6 +2076,32 @@ final class FrontendSequenceItemInsnLoweringProcessors {
                                 + operandSlots.size() + " source operands"
                 );
             };
+        }
+
+        /// The range contract takes three ints, but a source bound may be a `Variant` (for example
+        /// `range(h)` where `h` came from a dynamic call). Materialize the ordinary boundary so the
+        /// intrinsic only ever sees its contracted int slots instead of failing in C codegen.
+        private @NotNull String materializeInitArgument(
+                @NotNull FrontendBodyLoweringSession session,
+                @NotNull LirBasicBlock block,
+                @NotNull String valueId,
+                @NotNull GdType expectedType,
+                @NotNull String use
+        ) {
+            var sourceSlotId = session.slotIdForValue(valueId);
+            var sourceType = session.requireValueType(valueId);
+            if (sourceType.equals(expectedType)
+                    || !(sourceType instanceof GdVariantType)
+                    || expectedType instanceof GdVariantType) {
+                return sourceSlotId;
+            }
+            return session.materializeFrontendBoundaryValue(
+                    block,
+                    sourceSlotId,
+                    sourceType,
+                    expectedType,
+                    use
+            );
         }
     }
 
