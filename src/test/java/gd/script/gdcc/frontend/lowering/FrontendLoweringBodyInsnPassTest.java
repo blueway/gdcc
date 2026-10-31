@@ -70,6 +70,7 @@ import gd.script.gdcc.lir.insn.LiteralStringInsn;
 import gd.script.gdcc.lir.insn.LiteralStringNameInsn;
 import gd.script.gdcc.lir.insn.LoadStaticInsn;
 import gd.script.gdcc.lir.insn.LoadPropertyInsn;
+import gd.script.gdcc.lir.insn.ObjectCastInsn;
 import gd.script.gdcc.lir.insn.PackVariantInsn;
 import gd.script.gdcc.lir.insn.ReturnInsn;
 import gd.script.gdcc.lir.insn.StorePropertyInsn;
@@ -13540,6 +13541,57 @@ class FrontendLoweringBodyInsnPassTest {
                 () -> assertEquals(1, countInstructions(instructions, IsInstanceOfInsn.class)),
                 () -> assertEquals(1, countInstructions(instructions, BinaryOpInsn.class))
         );
+    }
+
+    /// `event is InputEventKey and event.pressed`: the source slot keeps the declared
+    /// `InputEvent` type, while member lookup is narrowed. Lowering must materialize the
+    /// matching runtime downcast so the property load resolves against InputEventKey.
+    @Test
+    void runCastsIsGuardNarrowedMemberReceiverToTheNarrowedType() throws Exception {
+        var prepared = prepareContext(
+                "body_insn_is_guard_member_receiver.gd",
+                """
+                        class_name BodyInsnIsGuardMemberReceiver
+                        extends Node
+
+                        func probe(event: InputEvent) -> bool:
+                            if event is InputEventKey and event.pressed and not event.echo:
+                                return true
+                            return false
+                        """,
+                Map.of("BodyInsnIsGuardMemberReceiver", "RuntimeBodyInsnIsGuardMemberReceiver"),
+                true
+        );
+        var probeContext = requireContext(
+                prepared.context().requireFunctionLoweringContexts(),
+                FunctionLoweringContext.Kind.EXECUTABLE_BODY,
+                "RuntimeBodyInsnIsGuardMemberReceiver",
+                "probe"
+        );
+
+        new FrontendLoweringBodyInsnPass().run(prepared.context());
+
+        var function = probeContext.targetFunction();
+        var instructions = allInstructions(function);
+        var casts = instructions.stream()
+                .filter(ObjectCastInsn.class::isInstance)
+                .map(ObjectCastInsn.class::cast)
+                .toList();
+        var propertyLoads = instructions.stream()
+                .filter(LoadPropertyInsn.class::isInstance)
+                .map(LoadPropertyInsn.class::cast)
+                .filter(insn -> insn.propertyName().equals("pressed") || insn.propertyName().equals("echo"))
+                .toList();
+
+        assertAll(
+                () -> assertFalse(prepared.diagnostics().hasErrors()),
+                () -> assertEquals(2, propertyLoads.size()),
+                () -> assertEquals(2, casts.size()),
+                () -> casts.forEach(cast -> assertEquals("InputEventKey", cast.className()))
+        );
+        for (var load : propertyLoads) {
+            assertEquals("InputEventKey", requireVariableType(function, load.objectId()).getTypeName());
+        }
     }
 
     @Test

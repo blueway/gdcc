@@ -75,6 +75,7 @@ import gd.script.gdcc.lir.insn.LiteralIntInsn;
 import gd.script.gdcc.lir.insn.LiteralNullInsn;
 import gd.script.gdcc.lir.insn.LiteralStringNameInsn;
 import gd.script.gdcc.lir.insn.LoadStaticInsn;
+import gd.script.gdcc.lir.insn.ObjectCastInsn;
 import gd.script.gdcc.lir.insn.UnaryOpInsn;
 import gd.script.gdcc.frontend.sema.FrontendMatchPatternRoute;
 import gd.script.gdcc.frontend.sema.FrontendTypeTestTarget;
@@ -1190,13 +1191,35 @@ final class FrontendSequenceItemInsnLoweringProcessors {
                         ));
                         return block;
                     }
-                    var receiverSlotId = session.slotIdForValue(node.baseValueIdOrNull());
+                    var receiverValueId = node.baseValueIdOrNull();
+                    var receiverSlotId = session.slotIdForValue(receiverValueId);
+                    var receiverType = session.requireValueType(receiverValueId);
+                    // `event is InputEventKey and event.pressed`: chain binding narrows the
+                    // receiver for member lookup, but the source slot still has the declared
+                    // supertype. Materialize the same runtime downcast GDScript performs so the
+                    // property load resolves against InputEventKey instead of InputEvent.
+                    if (resolvedMember.receiverType() instanceof GdObjectType narrowedType
+                            && receiverType instanceof GdObjectType declaredType
+                            && !narrowedType.getTypeName().equals(declaredType.getTypeName())
+                            && session.classRegistry().checkAssignable(narrowedType, declaredType)) {
+                        var narrowedSlotId = session.allocateWritableRouteTemp(
+                                "member_receiver_narrow",
+                                narrowedType
+                        );
+                        block.appendNonTerminatorInstruction(new ObjectCastInsn(
+                                narrowedSlotId,
+                                narrowedType.getTypeName(),
+                                receiverSlotId
+                        ));
+                        receiverSlotId = narrowedSlotId;
+                        receiverType = narrowedType;
+                    }
                     var chain = new FrontendWritableRouteSupport.FrontendWritableAccessChain(
                             node.anchor(),
                             new FrontendWritableRouteSupport.FrontendWritableRoot(
                                     "member receiver",
                                     receiverSlotId,
-                                    session.requireValueType(node.baseValueIdOrNull())
+                                    receiverType
                             ),
                             new FrontendWritableRouteSupport.InstancePropertyLeaf(
                                     receiverSlotId,
