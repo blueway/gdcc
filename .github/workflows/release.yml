@@ -152,22 +152,6 @@ jobs:
           printf '%s\n' "${release_files[@]}" > build/distributions/release-files.txt
           sha256sum "${release_files[@]}"
 
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: gdcc-${{ steps.version.outputs.version }}-release-files
-          path: |
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-linux-x86_64.zip
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-windows-x86_64.zip
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-linux-aarch64.zip
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-linux-x86_64-full.zip
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-windows-x86_64-full.zip
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-linux-aarch64-full.zip
-            build/distributions/gdcc-${{ steps.version.outputs.version }}.jar
-            build/distributions/gdcc-${{ steps.version.outputs.version }}-libs.zip
-            build/distributions/gdcc_editor_addon.zip
-          if-no-files-found: error
-
       - name: Publish GitHub release
         shell: bash
         env:
