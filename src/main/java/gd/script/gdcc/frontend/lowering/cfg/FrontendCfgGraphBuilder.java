@@ -4183,7 +4183,8 @@ public final class FrontendCfgGraphBuilder {
                         && routePayload.leaf().kind() == FrontendWritableRoutePayload.LeafKind.PROPERTY
                         && routePayload.leaf().containerValueIdOrNull() == null;
         if (staticBarePropertyReceiver
-                && (!FrontendCallMutabilitySupport.mayMutateReceiver(publishedCall)
+                && (isConstStaticPropertyReceiver(routePayload)
+                || !FrontendCallMutabilitySupport.mayMutateReceiver(publishedCall)
                 || (receiverType != null
                 && !FrontendWritableTypeWritebackSupport.requiresReverseCommitForCarrierType(
                         receiverType,
@@ -4191,6 +4192,26 @@ public final class FrontendCfgGraphBuilder {
             return routePayload.reverseCommitSteps();
         }
         return appendPromotedLeaf(routePayload);
+    }
+
+    /// A class-level `const` is lowered through the static-property surface, but it can never be
+    /// reassigned. A call on it either mutates shared container storage in place (already visible
+    /// through the same backing slot) or returns a new value without touching the slot, so
+    /// promoting the static leaf into a reverse-commit step could only produce an illegal store.
+    /// Dynamic calls cannot prove constness from the receiver type, so read it from the
+    /// declaration origin recorded by the class skeleton.
+    private boolean isConstStaticPropertyReceiver(@NotNull FrontendWritableRoutePayload routePayload) {
+        if (!(routePayload.leaf().anchor() instanceof IdentifierExpression identifierExpression)) {
+            return false;
+        }
+        var binding = requirePublishedBinding(identifierExpression);
+        if (binding.kind() != FrontendBindingKind.PROPERTY || binding.declarationSite() == null) {
+            return false;
+        }
+        var origin = requireAnalysisData().declarationOrigins().get(binding.declarationSite());
+        return origin != null
+                && origin.declarationNode() instanceof VariableDeclaration declaration
+                && declaration.kind() == DeclarationKind.CONST;
     }
 
     /// Only `LOCAL_VAR` bindings qualify for the direct-slot snapshot writeback. `PARAMETER` and

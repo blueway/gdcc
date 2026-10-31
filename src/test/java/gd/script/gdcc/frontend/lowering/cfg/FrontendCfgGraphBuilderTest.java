@@ -799,6 +799,61 @@ class FrontendCfgGraphBuilderTest {
         );
     }
 
+    /// A class-level `const` is lowered through the static-property surface and its inferred
+    /// (`:=`) type stays Variant, so `NAMES.size()` resolves dynamically and the conservative
+    /// mutability rule treats it as a possible mutation. The const declaration makes a write-back
+    /// illegal by construction, so the static leaf must stay terminal instead of failing the
+    /// static writable-route contract.
+    @Test
+    void buildExecutableBodyKeepsConstStaticReceiverCallLeafTerminal() throws Exception {
+        var analyzed = analyzeFunction(
+                "cfg_builder_const_static_call.gd",
+                """
+                        class_name CfgBuilderConstStaticCall
+                        extends RefCounted
+
+                        const NAMES := ["alpha", "beta"]
+
+                        static func count() -> int:
+                            return NAMES.size()
+                        """,
+                "count",
+                Map.of(
+                        "CfgBuilderConstStaticCall",
+                        "RuntimeCfgBuilderConstStaticCall"
+                )
+        );
+
+        var build = new FrontendCfgGraphBuilder().buildExecutableBody(
+                analyzed.function().body(),
+                analyzed.analysisData()
+        );
+        var entryNode = assertInstanceOf(FrontendCfgGraph.SequenceNode.class, build.graph().requireNode("seq_0"));
+        var sizeCall = entryNode.items().stream()
+                .filter(CallItem.class::isInstance)
+                .map(CallItem.class::cast)
+                .filter(item -> item.callableName().equals("size"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing size CallItem"));
+        var payload = requireNotNull(
+                sizeCall.writableRoutePayloadOrNull(),
+                "const static receiver call should publish a writable payload"
+        );
+
+        assertAll(
+                () -> assertFalse(analyzed.diagnostics().hasErrors()),
+                () -> assertEquals(FrontendWritableRoutePayload.RootKind.STATIC_CONTEXT, payload.root().kind()),
+                () -> assertEquals(FrontendWritableRoutePayload.LeafKind.PROPERTY, payload.leaf().kind()),
+                () -> assertEquals("NAMES", payload.leaf().memberNameOrNull()),
+                () -> assertNull(payload.leaf().containerValueIdOrNull()),
+                () -> assertTrue(
+                        payload.reverseCommitSteps().isEmpty(),
+                        "const static receiver must not promote a write-back step"
+                ),
+                () -> assertNotNull(sizeCall.receiverValueIdOrNull())
+        );
+    }
+
     /// A mutating method on a Variant-backed packed static member needs no write-back at all:
     /// the loaded value shares identity with the static storage, so the bare static property leaf
     /// stays terminal and the route publishes no commit step (the static-terminal contract passes).
