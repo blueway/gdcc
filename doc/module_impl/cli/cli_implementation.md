@@ -154,6 +154,13 @@ linux-x86_64/gdcc
 linux-aarch64/gdcc
 ```
 
+Zig 0.17 的入口合同改为 `pub fn main(init: std.process.Init)`：参数、环境、arena 与 `Io` 由启动器注入。launcher 通过
+`init.minimal.args.toSlice(...)` 取参数，通过 `std.process.executableDirPathAlloc(init.io, ...)` 定位自身目录，
+通过 `std.process.spawn(init.io, ...)` 启动 JVM，并用 `init.environ_map` 传递 `ZIG_HOME`。Zig 0.17 已移除
+`std.process.argsAlloc`、`std.process.EnvMap`、`std.process.Child.init`、`child.spawn()` 和旧的无 `io` 参数的
+`std.fs.*` 入口；文件系统访问统一走显式传入 `Io` 的 `std.Io.Dir` API（`openDirAbsolute`、`iterate().next(io)`、
+`statFile`、`rename`，`child.wait(io)` 仍保留）。launcher 的 Java 探测使用 `std.process.run(arena, io, ...)` 收集 `java --version` 输出。
+
 `packageDistribution` task 是聚合任务，生成三个平台 zip distribution：
 
 ```text

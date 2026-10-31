@@ -3,15 +3,13 @@ const jar_search = @import("jar_search.zig");
 const tool_search = @import("tool_search.zig");
 const translate = @import("translate.zig");
 
-pub fn main() !void {
-    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    const args = try std.process.argsAlloc(arena);
-    const exe_dir = try std.fs.selfExeDirPathAlloc(arena);
-    var env = try std.process.getEnvMap(arena);
-    const text = translate.fromEnvironment(arena, &env);
-    const jar_path = switch (jar_search.find(arena, exe_dir) catch |err| {
+pub fn main(init: std.process.Init) !void {
+    const arena = init.arena.allocator();
+    const args = try init.minimal.args.toSlice(arena);
+    const exe_dir = try std.process.executableDirPathAlloc(init.io, arena);
+    var env = init.environ_map;
+    const text = translate.fromEnvironment(arena, env);
+    const jar_path = switch (jar_search.find(arena, init.io, exe_dir) catch |err| {
         translate.printStderr(
             arena,
             "{s}: {s} {s}: {s}\n",
@@ -58,7 +56,7 @@ pub fn main() !void {
         "-Dgdparser.gdscript.resourceDir={s}/native",
         .{exe_dir},
     );
-    const java_path = tool_search.findJava25(arena, &env, exe_dir) catch |err| {
+    const java_path = tool_search.findJava25(arena, init.io, env, exe_dir) catch |err| {
         translate.printStderr(
             arena,
             "{s}: {s}: {s}\n",
@@ -77,7 +75,7 @@ pub fn main() !void {
     // Zig is optional at launch time: debug builds default to the in-process tinycc backend,
     // which never invokes zig. When discovery errors or finds nothing, ZIG_HOME simply stays
     // unset — the zig backend reports the gap only when a build actually selects it.
-    const zig_home: ?[]const u8 = tool_search.findZigHome(arena, &env, exe_dir) catch |err| blk: {
+    const zig_home: ?[]const u8 = tool_search.findZigHome(arena, init.io, env, exe_dir) catch |err| blk: {
         translate.printStderr(
             arena,
             "{s}: {s}: {s}\n",
@@ -99,18 +97,19 @@ pub fn main() !void {
         try child_args.append(arena, arg);
     }
 
-    var child = std.process.Child.init(child_args.items, arena);
-    child.env_map = &env;
-    try child.spawn();
-    const term = try child.wait();
+    var child = try std.process.spawn(init.io, .{
+        .argv = child_args.items,
+        .environ_map = env,
+    });
+    const term = try child.wait(init.io);
     exitWithChildTerm(term);
 }
 
 fn exitWithChildTerm(term: std.process.Child.Term) noreturn {
     switch (term) {
-        .Exited => |code| std.process.exit(code),
-        .Signal => std.process.exit(128),
-        .Stopped => std.process.exit(128),
-        .Unknown => std.process.exit(1),
+        .exited => |code| std.process.exit(code),
+        .signal => std.process.exit(128),
+        .stopped => std.process.exit(128),
+        .unknown => std.process.exit(1),
     }
 }

@@ -7,20 +7,21 @@ const java_min_major = 25;
 /// falling back to Java environment variables, PATH, and common system paths.
 pub fn findJava25(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_dir: []const u8,
 ) !?[]const u8 {
     const exe_name = executableName("java");
 
-    if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ exe_dir, exe_name }))) |path| return path;
-    if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ exe_dir, "java", "bin", exe_name }))) |path| return path;
-    if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ exe_dir, "jre", "bin", exe_name }))) |path| return path;
-    if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ exe_dir, "jdk", "bin", exe_name }))) |path| return path;
+    if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ exe_dir, exe_name }))) |path| return path;
+    if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ exe_dir, "java", "bin", exe_name }))) |path| return path;
+    if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ exe_dir, "jre", "bin", exe_name }))) |path| return path;
+    if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ exe_dir, "jdk", "bin", exe_name }))) |path| return path;
 
-    if (try findJavaFromEnv(arena, env, exe_name)) |path| return path;
-    if (try findJavaFromPath(arena, env, exe_name)) |path| return path;
+    if (try findJavaFromEnv(arena, io, env, exe_name)) |path| return path;
+    if (try findJavaFromPath(arena, io, env, exe_name)) |path| return path;
 
-    if (try findJavaFromCommonPaths(arena, env, exe_name)) |path| return path;
+    if (try findJavaFromCommonPaths(arena, io, env, exe_name)) |path| return path;
 
     return null;
 }
@@ -29,20 +30,21 @@ pub fn findJava25(
 /// falling back to Zig environment variables, PATH, and common system paths.
 pub fn findZigHome(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_dir: []const u8,
 ) !?[]const u8 {
     const exe_name = executableName("zig");
 
-    if (try checkExecutablePath(try std.fs.path.join(arena, &.{ exe_dir, exe_name }))) |path| return std.fs.path.dirname(path);
-    if (try checkExecutablePath(try std.fs.path.join(arena, &.{ exe_dir, "zig", exe_name }))) |path| return std.fs.path.dirname(path);
-    if (try checkExecutablePath(try std.fs.path.join(arena, &.{ exe_dir, "zig", "bin", exe_name }))) |path| return std.fs.path.dirname(path);
+    if (try checkExecutablePath(io, try std.fs.path.join(arena, &.{ exe_dir, exe_name }))) |path| return std.fs.path.dirname(path);
+    if (try checkExecutablePath(io, try std.fs.path.join(arena, &.{ exe_dir, "zig", exe_name }))) |path| return std.fs.path.dirname(path);
+    if (try checkExecutablePath(io, try std.fs.path.join(arena, &.{ exe_dir, "zig", "bin", exe_name }))) |path| return std.fs.path.dirname(path);
 
-    if (try findToolFromEnv(arena, env, exe_name, &.{ "ZIG", "ZIG_HOME", "ZIG_ROOT", "zig" })) |path| return std.fs.path.dirname(path);
-    if (try findExecutableFromPath(arena, env, exe_name)) |path| return std.fs.path.dirname(path);
+    if (try findToolFromEnv(arena, io, env, exe_name, &.{ "ZIG", "ZIG_HOME", "ZIG_ROOT", "zig" })) |path| return std.fs.path.dirname(path);
+    if (try findExecutableFromPath(arena, io, env, exe_name)) |path| return std.fs.path.dirname(path);
 
     for (zigCommonPaths(arena, env, exe_name)) |path| {
-        if (try checkExecutablePath(path)) |found| return std.fs.path.dirname(found);
+        if (try checkExecutablePath(io, path)) |found| return std.fs.path.dirname(found);
     }
 
     return null;
@@ -50,7 +52,8 @@ pub fn findZigHome(
 
 fn findJavaFromEnv(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
 ) !?[]const u8 {
     const keys = [_][]const u8{ "JAVA", "JAVA_HOME", "JDK_HOME", "JRE_HOME", "java" };
@@ -58,43 +61,46 @@ fn findJavaFromEnv(
         const value = env.get(key) orelse continue;
         if (std.mem.trim(u8, value, " \t\r\n").len == 0) continue;
 
-        if (try checkJavaPath(arena, env, value)) |path| return path;
-        if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ value, exe_name }))) |path| return path;
-        if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ value, "bin", exe_name }))) |path| return path;
+        if (try checkJavaPath(arena, io, env, value)) |path| return path;
+        if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ value, exe_name }))) |path| return path;
+        if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ value, "bin", exe_name }))) |path| return path;
     }
     return null;
 }
 
 fn findJavaFromPath(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
 ) !?[]const u8 {
     const path_value = env.get("PATH") orelse env.get("Path") orelse env.get("path") orelse return null;
     var parts = std.mem.splitScalar(u8, path_value, std.fs.path.delimiter);
     while (parts.next()) |part| {
         if (std.mem.trim(u8, part, " \t\r\n").len == 0 or !std.fs.path.isAbsolute(part)) continue;
-        if (try checkJavaPath(arena, env, try std.fs.path.join(arena, &.{ part, exe_name }))) |path| return path;
+        if (try checkJavaPath(arena, io, env, try std.fs.path.join(arena, &.{ part, exe_name }))) |path| return path;
     }
     return null;
 }
 
 fn findJavaFromCommonPaths(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
 ) !?[]const u8 {
     var paths: std.ArrayList([]const u8) = .empty;
-    try appendJavaCommonPathCandidates(arena, env, exe_name, &paths);
+    try appendJavaCommonPathCandidates(arena, io, env, exe_name, &paths);
     for (paths.items) |path| {
-        if (try checkJavaPath(arena, env, path)) |java_path| return java_path;
+        if (try checkJavaPath(arena, io, env, path)) |java_path| return java_path;
     }
     return null;
 }
 
 fn findToolFromEnv(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
     keys: []const []const u8,
 ) !?[]const u8 {
@@ -102,62 +108,65 @@ fn findToolFromEnv(
         const value = env.get(key) orelse continue;
         if (std.mem.trim(u8, value, " \t\r\n").len == 0) continue;
 
-        if (try checkExecutablePath(value)) |path| return path;
-        if (try checkExecutablePath(try std.fs.path.join(arena, &.{ value, exe_name }))) |path| return path;
-        if (try checkExecutablePath(try std.fs.path.join(arena, &.{ value, "bin", exe_name }))) |path| return path;
+        if (try checkExecutablePath(io, value)) |path| return path;
+        if (try checkExecutablePath(io, try std.fs.path.join(arena, &.{ value, exe_name }))) |path| return path;
+        if (try checkExecutablePath(io, try std.fs.path.join(arena, &.{ value, "bin", exe_name }))) |path| return path;
     }
     return null;
 }
 
 fn findExecutableFromPath(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
 ) !?[]const u8 {
     const path_value = env.get("PATH") orelse env.get("Path") orelse env.get("path") orelse return null;
     var parts = std.mem.splitScalar(u8, path_value, std.fs.path.delimiter);
     while (parts.next()) |part| {
         if (std.mem.trim(u8, part, " \t\r\n").len == 0 or !std.fs.path.isAbsolute(part)) continue;
-        if (try checkExecutablePath(try std.fs.path.join(arena, &.{ part, exe_name }))) |path| return path;
+        if (try checkExecutablePath(io, try std.fs.path.join(arena, &.{ part, exe_name }))) |path| return path;
     }
     return null;
 }
 
 fn checkJavaPath(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     path: []const u8,
 ) !?[]const u8 {
-    const executable_path = (try checkExecutablePath(path)) orelse return null;
-    return if (try isJava25OrNewer(arena, env, executable_path)) executable_path else null;
+    const executable_path = (try checkExecutablePath(io, path)) orelse return null;
+    return if (try isJava25OrNewer(arena, io, env, executable_path)) executable_path else null;
 }
 
-fn checkExecutablePath(path: []const u8) !?[]const u8 {
+fn checkExecutablePath(io: std.Io, path: []const u8) !?[]const u8 {
     if (!std.fs.path.isAbsolute(path)) return null;
-    const stat = std.fs.cwd().statFile(path) catch return null;
+    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch return null;
     if (stat.kind != .file) return null;
     if (builtin.os.tag == .windows) {
-        std.fs.accessAbsolute(path, .{}) catch return null;
+        std.Io.Dir.accessAbsolute(io, path, .{}) catch return null;
     } else {
-        std.posix.access(path, std.posix.X_OK) catch return null;
+        std.Io.Dir.accessAbsolute(io, path, .{ .execute = true }) catch return null;
     }
     return path;
 }
 
 fn isJava25OrNewer(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     path: []const u8,
 ) !bool {
-    const result = std.process.Child.run(.{
-        .allocator = arena,
+    const result = std.process.run(arena, io, .{
         .argv = &.{ path, "--version" },
-        .max_output_bytes = 4096,
-        .env_map = env,
+        .stdout_limit = .limited(4096),
+        .stderr_limit = .limited(4096),
+        .environ_map = env,
     }) catch return false;
 
     switch (result.term) {
-        .Exited => |code| if (code != 0) return false,
+        .exited => |code| if (code != 0) return false,
         else => return false,
     }
     return hasJavaMinimumMajor(result.stdout) or hasJavaMinimumMajor(result.stderr);
@@ -186,12 +195,13 @@ fn executableName(comptime base: []const u8) []const u8 {
 
 fn appendJavaCommonPathCandidates(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
     paths: *std.ArrayList([]const u8),
 ) !void {
     switch (builtin.os.tag) {
-        .windows => try appendWindowsJavaCommonCandidates(arena, env, exe_name, paths),
+        .windows => try appendWindowsJavaCommonCandidates(arena, io, env, exe_name, paths),
         .macos => {
             try paths.append(arena, "/usr/bin/java");
             try paths.append(arena, "/usr/local/bin/java");
@@ -206,26 +216,28 @@ fn appendJavaCommonPathCandidates(
 
 fn appendWindowsJavaCommonCandidates(
     arena: std.mem.Allocator,
-    env: *const std.process.EnvMap,
+    io: std.Io,
+    env: *const std.process.Environ.Map,
     exe_name: []const u8,
     paths: *std.ArrayList([]const u8),
 ) !void {
     const program_file_keys = [_][]const u8{ "ProgramW6432", "ProgramFiles", "ProgramFiles(x86)" };
     for (program_file_keys) |key| {
         const program_files = envPath(env, key) orelse continue;
-        try appendProgramFilesJavaCandidates(arena, program_files, exe_name, paths);
+        try appendProgramFilesJavaCandidates(arena, io, program_files, exe_name, paths);
     }
 
     if (envPath(env, "USERPROFILE")) |user_profile| {
-        try appendJavaHomesUnderRoot(arena, try std.fs.path.join(arena, &.{ user_profile, ".jdks" }), exe_name, paths);
+        try appendJavaHomesUnderRoot(arena, io, try std.fs.path.join(arena, &.{ user_profile, ".jdks" }), exe_name, paths);
     }
     if (envPath(env, "LOCALAPPDATA")) |local_app_data| {
-        try appendJavaHomesUnderRoot(arena, try std.fs.path.join(arena, &.{ local_app_data, "Programs", "Java" }), exe_name, paths);
+        try appendJavaHomesUnderRoot(arena, io, try std.fs.path.join(arena, &.{ local_app_data, "Programs", "Java" }), exe_name, paths);
     }
 }
 
 fn appendProgramFilesJavaCandidates(
     arena: std.mem.Allocator,
+    io: std.Io,
     program_files: []const u8,
     exe_name: []const u8,
     paths: *std.ArrayList([]const u8),
@@ -240,40 +252,41 @@ fn appendProgramFilesJavaCandidates(
         "GraalVM",
     };
     for (vendor_dirs) |vendor_dir| {
-        try appendJavaHomesUnderRoot(arena, try std.fs.path.join(arena, &.{ program_files, vendor_dir }), exe_name, paths);
+        try appendJavaHomesUnderRoot(arena, io, try std.fs.path.join(arena, &.{ program_files, vendor_dir }), exe_name, paths);
     }
 }
 
 fn appendJavaHomesUnderRoot(
     arena: std.mem.Allocator,
+    io: std.Io,
     root: []const u8,
     exe_name: []const u8,
     paths: *std.ArrayList([]const u8),
 ) !void {
     if (!std.fs.path.isAbsolute(root)) return;
 
-    var dir = std.fs.openDirAbsolute(root, .{ .iterate = true }) catch return;
-    defer dir.close();
+    var dir = std.Io.Dir.openDirAbsolute(io, root, .{ .iterate = true }) catch return;
+    defer dir.close(io);
 
     var iterator = dir.iterate();
-    while (try iterator.next()) |entry| {
+    while (try iterator.next(io)) |entry| {
         if (entry.kind != .directory) continue;
 
         const candidate = try std.fs.path.join(arena, &.{ root, entry.name, "bin", exe_name });
-        const stat = std.fs.cwd().statFile(candidate) catch continue;
+        const stat = std.Io.Dir.cwd().statFile(io, candidate, .{}) catch continue;
         if (stat.kind != .file) continue;
         try paths.append(arena, candidate);
     }
 }
 
-fn envPath(env: *const std.process.EnvMap, key: []const u8) ?[]const u8 {
+fn envPath(env: *const std.process.Environ.Map, key: []const u8) ?[]const u8 {
     const value = env.get(key) orelse return null;
     const trimmed = std.mem.trim(u8, value, " \t\r\n");
     if (trimmed.len == 0 or !std.fs.path.isAbsolute(trimmed)) return null;
     return trimmed;
 }
 
-fn zigCommonPaths(arena: std.mem.Allocator, env: *const std.process.EnvMap, exe_name: []const u8) []const []const u8 {
+fn zigCommonPaths(arena: std.mem.Allocator, env: *const std.process.Environ.Map, exe_name: []const u8) []const []const u8 {
     var paths: std.ArrayList([]const u8) = .empty;
     switch (builtin.os.tag) {
         .windows => {
@@ -312,15 +325,15 @@ test "collects Windows Java candidates from Program Files roots" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try touchPath(tmp.dir, "Program Files/Java/jdk-25/bin/java.exe");
-    try touchPath(tmp.dir, "Program Files/Eclipse Adoptium/temurin-25/bin/java.exe");
-    try touchPath(tmp.dir, "Program Files (x86)/Java/jdk-25-x86/bin/java.exe");
-    try tmp.dir.makePath("Program Files/Java/not-a-jdk");
+    try touchPath(std.testing.io, tmp.dir, "Program Files/Java/jdk-25/bin/java.exe");
+    try touchPath(std.testing.io, tmp.dir, "Program Files/Eclipse Adoptium/temurin-25/bin/java.exe");
+    try touchPath(std.testing.io, tmp.dir, "Program Files (x86)/Java/jdk-25-x86/bin/java.exe");
+    try tmp.dir.createDirPath(std.testing.io, "Program Files/Java/not-a-jdk");
 
-    const root = try tmpDirPath(std.testing.allocator, tmp);
+    const root = try tmpDirPath(std.testing.io, std.testing.allocator, tmp);
     defer std.testing.allocator.free(root);
 
-    var env = std.process.EnvMap.init(std.testing.allocator);
+    var env = std.process.Environ.Map.init(std.testing.allocator);
     defer env.deinit();
     try putJoinedEnvPath(&env, root, "ProgramFiles", &.{"Program Files"});
     try putJoinedEnvPath(&env, root, "ProgramFiles(x86)", &.{"Program Files (x86)"});
@@ -328,7 +341,7 @@ test "collects Windows Java candidates from Program Files roots" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var paths: std.ArrayList([]const u8) = .empty;
-    try appendWindowsJavaCommonCandidates(arena.allocator(), &env, "java.exe", &paths);
+    try appendWindowsJavaCommonCandidates(arena.allocator(), std.testing.io, &env, "java.exe", &paths);
 
     try expectContainsPath(paths.items, try std.fs.path.join(std.testing.allocator, &.{ root, "Program Files", "Java", "jdk-25", "bin", "java.exe" }));
     try expectContainsPath(paths.items, try std.fs.path.join(std.testing.allocator, &.{ root, "Program Files", "Eclipse Adoptium", "temurin-25", "bin", "java.exe" }));
@@ -340,13 +353,13 @@ test "collects Windows Java candidates from user jdks and local app data" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try touchPath(tmp.dir, "Users/alice/.jdks/openjdk-25/bin/java.exe");
-    try touchPath(tmp.dir, "Users/alice/AppData/Local/Programs/Java/graalvm-jdk-25/bin/java.exe");
+    try touchPath(std.testing.io, tmp.dir, "Users/alice/.jdks/openjdk-25/bin/java.exe");
+    try touchPath(std.testing.io, tmp.dir, "Users/alice/AppData/Local/Programs/Java/graalvm-jdk-25/bin/java.exe");
 
-    const root = try tmpDirPath(std.testing.allocator, tmp);
+    const root = try tmpDirPath(std.testing.io, std.testing.allocator, tmp);
     defer std.testing.allocator.free(root);
 
-    var env = std.process.EnvMap.init(std.testing.allocator);
+    var env = std.process.Environ.Map.init(std.testing.allocator);
     defer env.deinit();
     try putJoinedEnvPath(&env, root, "USERPROFILE", &.{ "Users", "alice" });
     try putJoinedEnvPath(&env, root, "LOCALAPPDATA", &.{ "Users", "alice", "AppData", "Local" });
@@ -355,14 +368,14 @@ test "collects Windows Java candidates from user jdks and local app data" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var paths: std.ArrayList([]const u8) = .empty;
-    try appendWindowsJavaCommonCandidates(arena.allocator(), &env, "java.exe", &paths);
+    try appendWindowsJavaCommonCandidates(arena.allocator(), std.testing.io, &env, "java.exe", &paths);
 
     try expectContainsPath(paths.items, try std.fs.path.join(std.testing.allocator, &.{ root, "Users", "alice", ".jdks", "openjdk-25", "bin", "java.exe" }));
     try expectContainsPath(paths.items, try std.fs.path.join(std.testing.allocator, &.{ root, "Users", "alice", "AppData", "Local", "Programs", "Java", "graalvm-jdk-25", "bin", "java.exe" }));
 }
 
 test "ignores blank and relative Windows Java common roots" {
-    var env = std.process.EnvMap.init(std.testing.allocator);
+    var env = std.process.Environ.Map.init(std.testing.allocator);
     defer env.deinit();
     try env.put("ProgramFiles", " ");
     try env.put("USERPROFILE", "relative-user");
@@ -370,21 +383,21 @@ test "ignores blank and relative Windows Java common roots" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var paths: std.ArrayList([]const u8) = .empty;
-    try appendWindowsJavaCommonCandidates(arena.allocator(), &env, "java.exe", &paths);
+    try appendWindowsJavaCommonCandidates(arena.allocator(), std.testing.io, &env, "java.exe", &paths);
 
     try std.testing.expectEqual(@as(usize, 0), paths.items.len);
 }
 
-fn touchPath(dir: std.fs.Dir, path: []const u8) !void {
+fn touchPath(io: std.Io, dir: std.Io.Dir, path: []const u8) !void {
     if (std.fs.path.dirname(path)) |dirname| {
-        try dir.makePath(dirname);
+        try dir.createDirPath(io, dirname);
     }
-    var file = try dir.createFile(path, .{});
-    file.close();
+    var file = try dir.createFile(io, path, .{});
+    file.close(io);
 }
 
 fn putJoinedEnvPath(
-    env: *std.process.EnvMap,
+    env: *std.process.Environ.Map,
     root: []const u8,
     key: []const u8,
     components: []const []const u8,
@@ -401,8 +414,8 @@ fn putJoinedEnvPath(
     try env.put(key, value);
 }
 
-fn tmpDirPath(allocator: std.mem.Allocator, tmp: std.testing.TmpDir) ![]const u8 {
-    const cwd = try std.process.getCwdAlloc(allocator);
+fn tmpDirPath(io: std.Io, allocator: std.mem.Allocator, tmp: std.testing.TmpDir) ![]const u8 {
+    const cwd = try std.process.currentPathAlloc(io, allocator);
     defer allocator.free(cwd);
     return std.fs.path.join(allocator, &.{ cwd, ".zig-cache", "tmp", &tmp.sub_path });
 }

@@ -12,14 +12,14 @@ const JarCandidate = struct {
     path: []const u8,
 };
 
-pub fn find(arena: std.mem.Allocator, exe_dir: []const u8) !Result {
-    var dir = try std.fs.openDirAbsolute(exe_dir, .{ .iterate = true });
-    defer dir.close();
+pub fn find(arena: std.mem.Allocator, io: std.Io, exe_dir: []const u8) !Result {
+    var dir = try std.Io.Dir.openDirAbsolute(io, exe_dir, .{ .iterate = true });
+    defer dir.close(io);
 
     var jar_matches: std.ArrayList(JarCandidate) = .empty;
     var update_matches: std.ArrayList(JarCandidate) = .empty;
     var iterator = dir.iterate();
-    while (try iterator.next()) |entry| {
+    while (try iterator.next(io)) |entry| {
         if (entry.kind != .file) continue;
 
         const name = try arena.dupe(u8, entry.name);
@@ -39,7 +39,7 @@ pub fn find(arena: std.mem.Allocator, exe_dir: []const u8) !Result {
         return .{ .multiple_update_jars = try candidatePaths(arena, update_matches.items) };
     }
     if (update_matches.items.len == 1) {
-        return .{ .found = try applyUpdateJar(arena, dir, exe_dir, update_matches.items[0], jar_matches.items) };
+        return .{ .found = try applyUpdateJar(arena, io, dir, exe_dir, update_matches.items[0], jar_matches.items) };
     }
 
     return switch (jar_matches.items.len) {
@@ -51,17 +51,18 @@ pub fn find(arena: std.mem.Allocator, exe_dir: []const u8) !Result {
 
 fn applyUpdateJar(
     arena: std.mem.Allocator,
-    dir: std.fs.Dir,
+    io: std.Io,
+    dir: std.Io.Dir,
     exe_dir: []const u8,
     update_jar: JarCandidate,
     jar_matches: []const JarCandidate,
 ) ![]const u8 {
     for (jar_matches) |jar| {
-        try dir.deleteFile(jar.name);
+        try dir.deleteFile(io, jar.name);
     }
 
     const target_name = try updatedJarName(arena, update_jar.name);
-    try dir.rename(update_jar.name, target_name);
+    try std.Io.Dir.rename(dir, update_jar.name, dir, target_name, io);
     return std.fs.path.join(arena, &.{ exe_dir, target_name });
 }
 
@@ -134,16 +135,16 @@ test "renames unique update jar and removes old jars" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try touch(tmp.dir, "gdcc-1.2.2.jar");
-    try touch(tmp.dir, "gdcc-1.2.3-update.jar");
-    try touch(tmp.dir, "other.jar");
+    try touch(std.testing.io, tmp.dir, "gdcc-1.2.2.jar");
+    try touch(std.testing.io, tmp.dir, "gdcc-1.2.3-update.jar");
+    try touch(std.testing.io, tmp.dir, "other.jar");
 
-    const exe_dir = try tmpDirPath(std.testing.allocator, tmp);
+    const exe_dir = try tmpDirPath(std.testing.io, std.testing.allocator, tmp);
     defer std.testing.allocator.free(exe_dir);
 
     var find_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer find_arena.deinit();
-    const result = try find(find_arena.allocator(), exe_dir);
+    const result = try find(find_arena.allocator(), std.testing.io, exe_dir);
     const expected_path = try std.fs.path.join(std.testing.allocator, &.{ exe_dir, "gdcc-1.2.3.jar" });
     defer std.testing.allocator.free(expected_path);
     switch (result) {
@@ -151,25 +152,25 @@ test "renames unique update jar and removes old jars" {
         else => return error.TestUnexpectedResult,
     }
 
-    try expectFileExists(tmp.dir, "gdcc-1.2.3.jar");
-    try expectFileMissing(tmp.dir, "gdcc-1.2.2.jar");
-    try expectFileMissing(tmp.dir, "gdcc-1.2.3-update.jar");
-    try expectFileExists(tmp.dir, "other.jar");
+    try expectFileExists(std.testing.io, tmp.dir, "gdcc-1.2.3.jar");
+    try expectFileMissing(std.testing.io, tmp.dir, "gdcc-1.2.2.jar");
+    try expectFileMissing(std.testing.io, tmp.dir, "gdcc-1.2.3-update.jar");
+    try expectFileExists(std.testing.io, tmp.dir, "other.jar");
 }
 
 test "reports multiple ordinary jars without update jar" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try touch(tmp.dir, "gdcc-1.2.2.jar");
-    try touch(tmp.dir, "gdcc-1.2.3.jar");
+    try touch(std.testing.io, tmp.dir, "gdcc-1.2.2.jar");
+    try touch(std.testing.io, tmp.dir, "gdcc-1.2.3.jar");
 
-    const exe_dir = try tmpDirPath(std.testing.allocator, tmp);
+    const exe_dir = try tmpDirPath(std.testing.io, std.testing.allocator, tmp);
     defer std.testing.allocator.free(exe_dir);
 
     var find_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer find_arena.deinit();
-    const result = try find(find_arena.allocator(), exe_dir);
+    const result = try find(find_arena.allocator(), std.testing.io, exe_dir);
     switch (result) {
         .multiple_jars => |paths| try std.testing.expectEqual(@as(usize, 2), paths.len),
         else => return error.TestUnexpectedResult,
@@ -180,38 +181,38 @@ test "reports multiple update jars" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try touch(tmp.dir, "gdcc-1.2.2-update.jar");
-    try touch(tmp.dir, "gdcc-1.2.3-update.jar");
+    try touch(std.testing.io, tmp.dir, "gdcc-1.2.2-update.jar");
+    try touch(std.testing.io, tmp.dir, "gdcc-1.2.3-update.jar");
 
-    const exe_dir = try tmpDirPath(std.testing.allocator, tmp);
+    const exe_dir = try tmpDirPath(std.testing.io, std.testing.allocator, tmp);
     defer std.testing.allocator.free(exe_dir);
 
     var find_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer find_arena.deinit();
-    const result = try find(find_arena.allocator(), exe_dir);
+    const result = try find(find_arena.allocator(), std.testing.io, exe_dir);
     switch (result) {
         .multiple_update_jars => |paths| try std.testing.expectEqual(@as(usize, 2), paths.len),
         else => return error.TestUnexpectedResult,
     }
 }
 
-fn touch(dir: std.fs.Dir, name: []const u8) !void {
-    var file = try dir.createFile(name, .{});
-    file.close();
+fn touch(io: std.Io, dir: std.Io.Dir, name: []const u8) !void {
+    var file = try dir.createFile(io, name, .{});
+    file.close(io);
 }
 
-fn tmpDirPath(allocator: std.mem.Allocator, tmp: std.testing.TmpDir) ![]const u8 {
-    const cwd = try std.process.getCwdAlloc(allocator);
+fn tmpDirPath(io: std.Io, allocator: std.mem.Allocator, tmp: std.testing.TmpDir) ![]const u8 {
+    const cwd = try std.process.currentPathAlloc(io, allocator);
     defer allocator.free(cwd);
     return std.fs.path.join(allocator, &.{ cwd, ".zig-cache", "tmp", &tmp.sub_path });
 }
 
-fn expectFileExists(dir: std.fs.Dir, name: []const u8) !void {
-    _ = try dir.statFile(name);
+fn expectFileExists(io: std.Io, dir: std.Io.Dir, name: []const u8) !void {
+    _ = try dir.statFile(io, name, .{});
 }
 
-fn expectFileMissing(dir: std.fs.Dir, name: []const u8) !void {
-    _ = dir.statFile(name) catch |err| switch (err) {
+fn expectFileMissing(io: std.Io, dir: std.Io.Dir, name: []const u8) !void {
+    _ = dir.statFile(io, name, .{}) catch |err| switch (err) {
         error.FileNotFound => return,
         else => return err,
     };
