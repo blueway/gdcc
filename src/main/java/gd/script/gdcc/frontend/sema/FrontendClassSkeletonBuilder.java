@@ -345,7 +345,8 @@ public final class FrontendClassSkeletonBuilder {
                     recordDeclarationOrigin(signalDef, signalStatement, context);
                 }
                 case VariableDeclaration variableDeclaration -> {
-                    if (variableDeclaration.kind() == DeclarationKind.VAR) {
+                    var isConstant = variableDeclaration.kind() == DeclarationKind.CONST;
+                    if (variableDeclaration.kind() == DeclarationKind.VAR || isConstant) {
                         if (rejectReservedSyntheticPropertyHelperMember(
                                 variableDeclaration,
                                 "Property",
@@ -355,9 +356,16 @@ public final class FrontendClassSkeletonBuilder {
                             continue;
                         }
                         var propertyDef = toLirProperty(variableDeclaration, declaredTypeScope, context);
+                        if (isConstant) {
+                            // GDCC has no separate class-constant storage yet: a class-level
+                            // `const` is published as a static property, so the initializer runs
+                            // once through the static-init path and every use (including
+                            // `Class.CONST`) reads the shared backing slot.
+                            propertyDef.setStatic(true);
+                        }
                         classDef.addProperty(propertyDef);
                         recordDeclarationOrigin(propertyDef, variableDeclaration, context);
-                        if (variableDeclaration.isStatic()) {
+                        if (propertyDef.isStatic()) {
                             pendingStaticPropertyChecks.add(new PendingStaticPropertyConflictCheck(
                                     context.sourcePath(),
                                     classDef,
@@ -461,7 +469,8 @@ public final class FrontendClassSkeletonBuilder {
             switch (statement) {
                 case SignalStatement signalStatement -> reservedNames.add(signalStatement.name().trim());
                 case VariableDeclaration variableDeclaration -> {
-                    if (variableDeclaration.kind() == DeclarationKind.VAR) {
+                    if (variableDeclaration.kind() == DeclarationKind.VAR
+                            || variableDeclaration.kind() == DeclarationKind.CONST) {
                         reservedNames.add(variableDeclaration.name().trim());
                     }
                 }

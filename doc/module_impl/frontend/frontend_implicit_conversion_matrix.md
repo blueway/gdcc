@@ -79,7 +79,7 @@ GDExtension `call_func` inbound wrapper 两条路径的完成度对齐；它不�
 - `String` / `StringName` 的 operator 支持由 exact operator metadata 与 operator lowering 合同决定，
   不由本文矩阵扩面。
 - `CastExpression` / `CastItem` 不是本 feature 的支持面；`as` 由独立合同 `frontend_cast_expression_implementation.md` 管理。
-- `NodePath -> String`、`String -> NodePath` 仍保持当前 GDCC 不支持状态。
+- `String -> NodePath` 走 ordinary typed boundary 的 constructor materialization；`NodePath -> String` 仍保持当前 GDCC 不支持状态。
 
 ### 1.3 当前 GDCC 的统一基线
 
@@ -93,6 +93,7 @@ GDExtension `call_func` inbound wrapper 两条路径的完成度对齐；它不�
 - `int -> float`：支持，必须通过 `ALLOW_WITH_INTRINSIC_CAST` 与显式 lowering materialization 闭合
 - 同维度 `Vector*i -> Vector*`：支持，必须通过 `ALLOW_WITH_INTRINSIC_CAST` 与显式 lowering materialization 闭合
 - `String <-> StringName`：支持，必须通过 constructor materialization decision 与显式 `construct_builtin` lowering 闭合
+- `String -> NodePath`：支持，同样通过 constructor materialization decision 与显式 `construct_builtin` lowering 闭合
 - 其余 typed boundary：原则上回退 `ClassRegistry.checkAssignable(...)`
 
 这意味着：
@@ -191,7 +192,7 @@ GDExtension `call_func` inbound wrapper 两条路径的完成度对齐；它不�
 | `float` | `int` | Y | N | Godot 会截断；GDCC 当前不支持 |
 | `String` | `StringName` | Y | Y | ordinary typed-boundary constructor materialization；lowering 必须生成 target-typed `construct_builtin`，不得当作 direct flow |
 | `StringName` | `String` | Y | Y | ordinary typed-boundary constructor materialization；lowering 必须生成 target-typed `construct_builtin`，不得当作 direct flow |
-| `String` | `NodePath` | Y | N | Godot strict convert table 支持 |
+| `String` | `NodePath` | Y | Y | ordinary typed-boundary constructor materialization；lowering 必须生成 target-typed `construct_builtin`，不得当作 direct flow |
 | `NodePath` | `String` | Y | N | Godot strict convert table 支持 |
 | `String` | `Color` | Y | N | 例如颜色文本到 `Color` |
 | `int` | `Color` | Y | N | Godot strict convert table 支持 |
@@ -392,7 +393,7 @@ Godot strict implicit conversion 表里没有 `Dictionary` 到其他 builtin con
 - `Variant` boundary：已支持
 - object hierarchy：已支持
 - `Nil -> object`：已支持
-- builtin strict implicit conversion：已支持 `int -> float`、同维度 `Vector*i -> Vector*` 与 `String <-> StringName`；前两类走 intrinsic materialization，string family 走 constructor materialization；其它 builtin strict conversion 仍未支持
+- builtin strict implicit conversion：已支持 `int -> float`、同维度 `Vector*i -> Vector*`、`String <-> StringName` 与 `String -> NodePath`；前两类走 intrinsic materialization，string family 走 constructor materialization；其它 builtin strict conversion 仍未支持
 - keyed/index widened compatibility：只支持已经属于 ordinary typed boundary helper 的 key/index conversion；builtin keyed metadata route 与 `float -> int` index 仍未支持
 
 因此，若后续要把 GDCC 的 typed boundary 行为推进到接近 Godot，优先级最高的缺口依次是：

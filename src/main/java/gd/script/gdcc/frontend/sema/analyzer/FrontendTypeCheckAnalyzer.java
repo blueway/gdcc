@@ -982,9 +982,11 @@ public class FrontendTypeCheckAnalyzer {
         if (propertyInitializerContext == null) {
             return null;
         }
+        var expectsStatic = variableDeclaration.kind() == DeclarationKind.CONST
+                || variableDeclaration.isStatic();
         return propertyInitializerContext.declaringClass().getProperties().stream()
                 .filter(property -> property.getName().equals(variableDeclaration.name().trim()))
-                .filter(property -> property.isStatic() == variableDeclaration.isStatic())
+                .filter(property -> property.isStatic() == expectsStatic)
                 .findFirst()
                 .orElse(null);
     }
@@ -1536,7 +1538,8 @@ public class FrontendTypeCheckAnalyzer {
             var previousCallableReturnSlot = currentCallableReturnSlot;
             var previousPropertyInitializerContext = currentPropertyInitializerContext;
             currentRestriction = FrontendPropertyInitializerSupport.restrictionFor(variableDeclaration);
-            currentStaticContext = variableDeclaration.isStatic();
+            currentStaticContext = variableDeclaration.kind() == DeclarationKind.CONST
+                    || variableDeclaration.isStatic();
             currentCallableReturnSlot = null;
             currentPropertyInitializerContext = FrontendPropertyInitializerSupport.contextFor(
                     scopesByAst,

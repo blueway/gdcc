@@ -232,7 +232,9 @@ public final class FrontendLoweringFunctionPreparationPass implements FrontendLo
             @NotNull VariableDeclaration variableDeclaration,
             @NotNull FrontendAnalysisData analysisData
     ) {
-        if (variableDeclaration.kind() != DeclarationKind.VAR || variableDeclaration.value() == null) {
+        if ((variableDeclaration.kind() != DeclarationKind.VAR
+                && variableDeclaration.kind() != DeclarationKind.CONST)
+                || variableDeclaration.value() == null) {
             return null;
         }
         requirePublishedScope(variableDeclaration, "property declaration", analysisData);

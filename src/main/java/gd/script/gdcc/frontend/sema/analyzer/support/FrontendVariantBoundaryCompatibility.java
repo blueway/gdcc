@@ -7,6 +7,7 @@ import gd.script.gdcc.type.GdFloatVectorType;
 import gd.script.gdcc.type.GdIntType;
 import gd.script.gdcc.type.GdIntVectorType;
 import gd.script.gdcc.type.GdNilType;
+import gd.script.gdcc.type.GdNodePathType;
 import gd.script.gdcc.type.GdObjectType;
 import gd.script.gdcc.type.GdStringNameType;
 import gd.script.gdcc.type.GdStringType;
@@ -81,6 +82,10 @@ public final class FrontendVariantBoundaryCompatibility {
                     Decision.ALLOW_WITH_INTRINSIC_CAST;
             case GdStringType _ when target instanceof GdStringNameType -> Decision.ALLOW_WITH_BUILTIN_CONSTRUCTOR;
             case GdStringNameType _ when target instanceof GdStringType -> Decision.ALLOW_WITH_BUILTIN_CONSTRUCTOR;
+            // GDScript widens a String literal to NodePath at typed boundaries, which is what
+            // `Tween.tween_property(obj, "position", value, t)` and every other NodePath-taking
+            // engine method rely on.
+            case GdStringType _ when target instanceof GdNodePathType -> Decision.ALLOW_WITH_BUILTIN_CONSTRUCTOR;
             default -> registry.checkAssignable(source, target) ? Decision.ALLOW_DIRECT : Decision.REJECT;
         };
     }

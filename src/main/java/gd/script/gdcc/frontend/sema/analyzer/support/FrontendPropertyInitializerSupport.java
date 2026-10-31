@@ -16,9 +16,12 @@ import gd.script.gdcc.type.GdType;
 
 /// Freezes the minimal body-phase support island for class property initializer subtrees.
 ///
-/// Current contract supports only:
-/// - `VariableDeclaration(kind == VAR && value != null)`
+/// Current contract supports:
+/// - `VariableDeclaration(kind == VAR || kind == CONST)` with a value
 /// - whose declaration scope is a `ClassScope`
+///
+/// Class-level `const` is lowered through the static-property surface, so it keeps the same
+/// initializer island as a `static var`.
 ///
 /// This keeps property initializer publication explicit without widening the whole class body into
 /// an executable region.
@@ -48,14 +51,19 @@ public final class FrontendPropertyInitializerSupport {
     ) {
         Objects.requireNonNull(scopesByAst, "scopesByAst must not be null");
         Objects.requireNonNull(variableDeclaration, "variableDeclaration must not be null");
-        if (variableDeclaration.kind() != DeclarationKind.VAR || variableDeclaration.value() == null) {
+        if ((variableDeclaration.kind() != DeclarationKind.VAR
+                && variableDeclaration.kind() != DeclarationKind.CONST)
+                || variableDeclaration.value() == null) {
             return false;
         }
         return scopesByAst.get(variableDeclaration) instanceof ClassScope;
     }
 
     public static @NotNull ResolveRestriction restrictionFor(@NotNull VariableDeclaration variableDeclaration) {
-        return Objects.requireNonNull(variableDeclaration, "variableDeclaration must not be null").isStatic()
+        var declaration = Objects.requireNonNull(variableDeclaration, "variableDeclaration must not be null");
+        // Class-level `const` is lowered through the static-property surface, so its
+        // initializer resolves in a static context even though the source has no `static`.
+        return declaration.kind() == DeclarationKind.CONST || declaration.isStatic()
                 ? ResolveRestriction.staticContext()
                 : ResolveRestriction.instanceContext();
     }
