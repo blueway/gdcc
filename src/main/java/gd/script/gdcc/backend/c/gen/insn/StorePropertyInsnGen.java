@@ -95,7 +95,13 @@ public final class StorePropertyInsnGen implements CInsnGen<StorePropertyInsn> {
                             break;
                         }
                         var args = new ArrayList<CBodyBuilder.ValueRef>(accessor.index() == null ? 2 : 3);
-                        args.add(receiverValue);
+                        args.add(BackendPropertyAccessResolver.renderEngineAccessorReceiverValue(
+                                bodyBuilder,
+                                objectVar,
+                                accessor,
+                                "STORE_PROPERTY",
+                                insn.propertyName()
+                        ));
                         if (accessor.index() != null) {
                             args.add(bodyBuilder.valueOfExpr(Integer.toString(accessor.index()), GdIntType.INT));
                         }

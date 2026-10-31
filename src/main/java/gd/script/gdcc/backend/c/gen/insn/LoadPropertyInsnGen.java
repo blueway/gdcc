@@ -118,7 +118,13 @@ public final class LoadPropertyInsnGen implements CInsnGen<LoadPropertyInsn> {
                             break;
                         }
                         var args = new ArrayList<CBodyBuilder.ValueRef>(accessor.index() == null ? 1 : 2);
-                        args.add(receiverValue);
+                        args.add(BackendPropertyAccessResolver.renderEngineAccessorReceiverValue(
+                                bodyBuilder,
+                                objectVar,
+                                accessor,
+                                "LOAD_PROPERTY",
+                                insn.propertyName()
+                        ));
                         if (accessor.index() != null) {
                             args.add(bodyBuilder.valueOfExpr(Integer.toString(accessor.index()), GdIntType.INT));
                         }

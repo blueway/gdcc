@@ -219,6 +219,29 @@ public final class BackendPropertyAccessResolver {
         );
     }
 
+    /// Render the receiver for a direct engine property accessor call.
+    ///
+    /// The property owner and the accessor method owner can differ: Godot registers
+    /// `InputEventScreenTouch.pressed` with the inherited `InputEvent.is_pressed` getter. The
+    /// generated helper is typed against the *method* owner, so the receiver must be upcast to
+    /// that class rather than to the property owner.
+    static @NotNull CBodyBuilder.ValueRef renderEngineAccessorReceiverValue(
+            @NotNull CBodyBuilder bodyBuilder,
+            @NotNull LirVariable receiverVar,
+            @NotNull EnginePropertyAccessor accessor,
+            @NotNull String insnName,
+            @NotNull String propertyName
+    ) {
+        return renderReceiverValue(
+                bodyBuilder,
+                receiverVar,
+                new GdObjectType(accessor.methodOwnerClass().getName()),
+                insnName,
+                "engine accessor owner",
+                " for property '" + propertyName + "'"
+        );
+    }
+
     /// Render a receiver value for a specific owner type.
     ///
     /// Receiver Value is an argument-shape concern, not a lifecycle ownership

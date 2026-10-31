@@ -1063,6 +1063,51 @@ public class CLoadPropertyInsnGenTest {
     }
 
     @Test
+    @DisplayName("Engine property inherited getter should upcast the receiver to the method owner")
+    void enginePropertyInheritedGetterShouldUpcastToMethodOwner() {
+        var inputEventClass = new ExtensionGdClass(
+                "InputEvent", false, true, "Object", "core",
+                List.of(), List.of(engineMethod("is_pressed", 1201L, "bool", List.of())), List.of(),
+                List.of(), List.of()
+        );
+        var touchClass = new ExtensionGdClass(
+                "InputEventScreenTouch", false, true, "InputEvent", "core",
+                List.of(), List.of(), List.of(),
+                List.of(new ExtensionGdClass.PropertyInfo(
+                        "pressed", "bool", true, true, "", "is_pressed", "set_pressed", null
+                )),
+                List.of()
+        );
+        var api = new ExtensionAPI(
+                null, List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(inputEventClass, touchClass), List.of(), List.of()
+        );
+
+        var hostClass = new LirClassDef("HostClass", "RefCounted", false, false, Map.of(), List.of(), List.of(), List.of());
+        var func = new LirFunctionDef("load_touch_pressed");
+        func.setReturnType(GdBoolType.BOOL);
+        func.addParameter(new LirParameterDef("event", new GdObjectType("InputEventScreenTouch"), null, func));
+        func.createAndAddVariable("tmp", GdBoolType.BOOL);
+
+        var entry = new LirBasicBlock("entry");
+        entry.appendInstruction(new LoadPropertyInsn("tmp", "pressed", "event"));
+        entry.appendInstruction(new ReturnInsn("tmp"));
+        func.addBasicBlock(entry);
+        func.setEntryBlockId("entry");
+        hostClass.addFunction(func);
+
+        var module = new LirModule("test_module", List.of(hostClass));
+        var ctx = newContext(api, List.of(hostClass));
+
+        var codegen = new CCodegen();
+        codegen.prepare(ctx, module);
+
+        var body = codegen.generateFuncBody(hostClass, func);
+        assertTrue(body.contains("gdcc_engine_call_inputevent_is_pressed"), body);
+        assertTrue(body.contains("gdcc_InputEventScreenTouch_fat_ptr_upcast_to_InputEvent($event)"), body);
+    }
+
+    @Test
     @DisplayName("Three-level GDCC->GDCC->ENGINE chain should resolve ENGINE owner getter")
     void threeLevelGdccToEngineChainShouldResolveEngineOwnerGetter() {
         var nodeClass = new ExtensionGdClass(
