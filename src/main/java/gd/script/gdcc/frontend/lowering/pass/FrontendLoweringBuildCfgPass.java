@@ -14,6 +14,8 @@ import dev.superice.gdparser.frontend.ast.Parameter;
 import dev.superice.gdparser.frontend.ast.VariableDeclaration;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.function.Supplier;
+
 /// Frontend CFG graph publication pass.
 ///
 /// The current implementation materializes compile-ready executable bodies into the new frontend CFG
@@ -65,7 +67,10 @@ public final class FrontendLoweringBuildCfgPass implements FrontendLoweringPass 
             throw new IllegalStateException(describeContext(functionContext) + " must expose a Block loweringRoot");
         }
         validateShellOnlyTarget(functionContext);
-        var build = new FrontendCfgGraphBuilder().buildExecutableBody(rootBlock, functionContext.analysisData());
+        var build = buildWithContext(
+                functionContext,
+                () -> new FrontendCfgGraphBuilder().buildExecutableBody(rootBlock, functionContext.analysisData())
+        );
         functionContext.publishFrontendCfgGraph(build.graph());
         build.regions().forEach(functionContext::publishFrontendCfgRegion);
         build.forSourceIteratorSlots().forEach(functionContext::publishForSourceIteratorSlot);
@@ -91,9 +96,11 @@ public final class FrontendLoweringBuildCfgPass implements FrontendLoweringPass 
         }
         validateShellOnlyTarget(functionContext);
         functionContext.publishFrontendCfgGraph(
-                new FrontendCfgGraphBuilder()
-                        .buildPropertyInitializer(initializerExpression, functionContext.analysisData())
-                        .graph()
+                buildWithContext(
+                        functionContext,
+                        () -> new FrontendCfgGraphBuilder()
+                                .buildPropertyInitializer(initializerExpression, functionContext.analysisData())
+                ).graph()
         );
     }
 
@@ -120,9 +127,11 @@ public final class FrontendLoweringBuildCfgPass implements FrontendLoweringPass 
         }
         validateShellOnlyTarget(functionContext);
         functionContext.publishFrontendCfgGraph(
-                new FrontendCfgGraphBuilder()
-                        .buildPropertyInitializer(defaultExpression, functionContext.analysisData())
-                        .graph()
+                buildWithContext(
+                        functionContext,
+                        () -> new FrontendCfgGraphBuilder()
+                                .buildPropertyInitializer(defaultExpression, functionContext.analysisData())
+                ).graph()
         );
     }
 
@@ -147,6 +156,25 @@ public final class FrontendLoweringBuildCfgPass implements FrontendLoweringPass 
                 || !functionContext.targetFunction().getEntryBlockId().isEmpty()) {
             throw new IllegalStateException(
                     describeContext(functionContext) + " must remain shell-only before frontend CFG materialization"
+            );
+        }
+    }
+
+    /// Frontend CFG failures otherwise report only the synthetic sequence id, which makes the
+    /// offending class/function impossible to find in a multi-script module. Keep the original
+    /// cause but prefix it with the exact lowering context.
+    private static <T> T buildWithContext(
+            @NotNull FunctionLoweringContext functionContext,
+            @NotNull Supplier<T> build
+    ) {
+        try {
+            return build.get();
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(
+                    describeContext(functionContext)
+                            + " failed to build frontend CFG: "
+                            + exception.getMessage(),
+                    exception
             );
         }
     }

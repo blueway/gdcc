@@ -393,10 +393,18 @@ public record FrontendCfgGraph(
         if (payload.leaf().kind() == FrontendWritableRoutePayload.LeafKind.PROPERTY
                 && payload.leaf().containerValueIdOrNull() == null
                 && !payload.reverseCommitSteps().isEmpty()) {
+            var anchor = payload.routeAnchor().range().start();
             throw new IllegalArgumentException(
                     "Frontend CFG writable route in sequence '"
                             + nodeId
                             + "' must keep a static property leaf terminal once rooted at STATIC_CONTEXT"
+                            + " (member '"
+                            + payload.leaf().memberNameOrNull()
+                            + "', anchor "
+                            + (anchor.line() + 1)
+                            + ":"
+                            + (anchor.column() + 1)
+                            + ")"
             );
         }
         for (var index = 1; index < payload.reverseCommitSteps().size(); index++) {
