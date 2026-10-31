@@ -144,7 +144,7 @@ public final class LoadPropertyInsnGen implements CInsnGen<LoadPropertyInsn> {
 
     private static void emitDynamicPropertyLoad(@NotNull CBodyBuilder bodyBuilder,
                                                 @NotNull LirVariable objectVar,
-                                                @NotNull CBodyBuilder.ValueRef target,
+                                                @NotNull CBodyBuilder.TargetRef target,
                                                 @NotNull GdType resultType,
                                                 @NotNull String propertyName) {
         // Pass objectVar directly; renderArgument auto-converts GDCC pointers to Godot raw
