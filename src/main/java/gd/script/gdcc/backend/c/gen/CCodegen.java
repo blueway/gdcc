@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 public class CCodegen implements Codegen {
     private static final Logger LOGGER = LoggerFactory.getLogger(CCodegen.class);
@@ -93,6 +94,15 @@ public class CCodegen implements Codegen {
     private final LirPublicAbiValidator publicAbiValidator = new LirPublicAbiValidator();
     /// Validator for lifecycle instruction usage restrictions.
     private final LifecycleInstructionRestrictionValidator lifecycleValidator = new LifecycleInstructionRestrictionValidator();
+    /// Opt-in probe mode: render every body independently, collect per-body failures, and throw
+    /// one summary after template rendering instead of stopping at the first invalid instruction.
+    private boolean collectCodegenErrors;
+    private final List<String> collectedCodegenErrors = new ArrayList<>();
+
+    /// Enables the all-native probe's collect-everything mode. Production builds keep fail-fast.
+    public void setCollectCodegenErrors(boolean collectCodegenErrors) {
+        this.collectCodegenErrors = collectCodegenErrors;
+    }
 
     private static void registerInsnGen(@NotNull CInsnGen<? extends LirInstruction> insnGen) {
         for (var opcode : insnGen.getInsnOpcodes()) {
@@ -1203,6 +1213,41 @@ public class CCodegen implements Codegen {
         }
     }
 
+    private @NotNull String renderWithErrorCollection(@NotNull String target, @NotNull Supplier<String> renderer) {
+        if (!collectCodegenErrors) {
+            return renderer.get();
+        }
+        try {
+            return renderer.get();
+        } catch (RuntimeException ex) {
+            collectedCodegenErrors.add(target + ": " + describeCodegenError(ex));
+            return "/* GDCC_COLLECT_CODEGEN_ERRORS: body omitted for " + escapeCComment(target) + " */\n";
+        }
+    }
+
+    private static @NotNull String describeCodegenTarget(@NotNull LirClassDef classDef, @NotNull String member) {
+        var sourceFile = classDef.getSourceFile();
+        var source = sourceFile == null || sourceFile.isBlank() ? classDef.getName() : sourceFile;
+        return source + " " + member;
+    }
+
+    private static @NotNull String describeCodegenError(@NotNull RuntimeException ex) {
+        var description = new StringBuilder(ex.getClass().getSimpleName());
+        var current = ex;
+        while (current != null) {
+            var message = current.getMessage();
+            if (message != null && !message.isBlank() && description.indexOf(message) < 0) {
+                description.append(": ").append(message);
+            }
+            current = current.getCause() instanceof RuntimeException runtimeCause ? runtimeCause : null;
+        }
+        return description.toString();
+    }
+
+    private static @NotNull String escapeCComment(@NotNull String text) {
+        return text.replace("*/", "* /").replace('\n', ' ').replace('\r', ' ');
+    }
+
     private static void registerFileScopeSymbol(
             @NotNull Map<String, String> symbolSources,
             @NotNull String symbol,
@@ -1224,6 +1269,7 @@ public class CCodegen implements Codegen {
         if (ctx == null || module == null) {
             throw new IllegalStateException("CCodegen not prepared. Call prepare() before generate().");
         }
+        collectedCodegenErrors.clear();
         // Validate ABI surfaces before backend synthesizes helpers or touches outward metadata.
         publicAbiValidator.validateModule(module);
         this.generateDefaultGetterSetterInitialization();
@@ -1245,13 +1291,34 @@ public class CCodegen implements Codegen {
             // Template-visible registrations are committed only after `entry.c` renders successfully.
             var templateUsageBuffer = usageSession.newFunctionBuffer();
             var bodyRender = new GenerateRenderFacade(
-                    (classDef, func) -> generateFuncBody(classDef, func, usageSession),
-                    (classDef, property) -> generatePropertyInitApplyBody(classDef, property, usageSession),
-                    (classDef, property) -> generatePropertyDefaultApplyBody(classDef, property, usageSession),
-                    (classDef, property) -> generateOnreadyApplyBody(classDef, property, usageSession),
-                    classDef -> generateStaticDefaultsBody(classDef, usageSession),
-                    classDef -> generateStaticInitializersBody(classDef, usageSession),
-                    this::generateStaticDeinitializeBody,
+                    (classDef, func) -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, func.getName()),
+                            () -> generateFuncBody(classDef, func, usageSession)
+                    ),
+                    (classDef, property) -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, "property init " + property.getName()),
+                            () -> generatePropertyInitApplyBody(classDef, property, usageSession)
+                    ),
+                    (classDef, property) -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, "property default " + property.getName()),
+                            () -> generatePropertyDefaultApplyBody(classDef, property, usageSession)
+                    ),
+                    (classDef, property) -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, "onready apply " + property.getName()),
+                            () -> generateOnreadyApplyBody(classDef, property, usageSession)
+                    ),
+                    classDef -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, "static defaults"),
+                            () -> generateStaticDefaultsBody(classDef, usageSession)
+                    ),
+                    classDef -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, "static initializers"),
+                            () -> generateStaticInitializersBody(classDef, usageSession)
+                    ),
+                    classDef -> renderWithErrorCollection(
+                            describeCodegenTarget(classDef, "static deinitialize"),
+                            () -> generateStaticDeinitializeBody(classDef)
+                    ),
                     templateUsageBuffer
             );
             var hrxCatalog = CHrxIdentityCatalog.collect(module, ctx, helper);
@@ -1324,6 +1391,17 @@ public class CCodegen implements Codegen {
             var objectFatPtrTypesBytes = objectFatPtrTypesSrc.getBytes(StandardCharsets.UTF_8);
             var hBytes = hSrc.getBytes(StandardCharsets.UTF_8);
 
+            if (collectCodegenErrors && !collectedCodegenErrors.isEmpty()) {
+                var summary = new StringBuilder("GDCC codegen collected ")
+                        .append(collectedCodegenErrors.size())
+                        .append(" error(s):\n");
+                for (var index = 0; index < collectedCodegenErrors.size(); index++) {
+                    summary.append(index + 1).append(". ")
+                            .append(collectedCodegenErrors.get(index))
+                            .append('\n');
+                }
+                throw new IllegalStateException(summary.toString());
+            }
             var cFile = new GeneratedFile(cBytes, "entry.c");
             var engineMethodBindsFile = new GeneratedFile(engineMethodBindsBytes, "engine_method_binds.h");
             var objectFatPtrTypesFile = new GeneratedFile(objectFatPtrTypesBytes, "object_fat_ptr_types.h");

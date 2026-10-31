@@ -297,6 +297,9 @@ public final class CompileTaskRunner implements Runnable {
                     request.compileOptions().isStripNativeSymbols()
             );
             var codegen = new CCodegen();
+            if ("1".equals(System.getenv("GDCC_COLLECT_CODEGEN_ERRORS"))) {
+                codegen.setCollectCodegenErrors(true);
+            }
             throwIfCancellationRequested();
             taskState.updateRunningStage(
                     CompileTaskSnapshot.Stage.CODEGEN_PREPARE,
