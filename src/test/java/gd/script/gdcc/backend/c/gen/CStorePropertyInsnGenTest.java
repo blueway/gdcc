@@ -376,6 +376,38 @@ public class CStorePropertyInsnGenTest {
     }
 
     @Test
+    @DisplayName("Engine property with internal _set_* accessor should store through godot_Object_set")
+    void enginePropertyWithInternalSetterShouldUseDynamicObjectSet() {
+        var controlClass = new ExtensionGdClass(
+                "Control", false, true, "Object", "core",
+                List.of(), List.of(engineMethod("get_size", 602L, "Vector2", List.of())), List.of(),
+                List.of(new ExtensionGdClass.PropertyInfo("size", "Vector2", true, true, "", "get_size", "_set_size", null)),
+                List.of()
+        );
+        var api = new ExtensionAPI(
+                null, List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(controlClass), List.of(), List.of()
+        );
+
+        var gdccClass = new LirClassDef("TestClass", "RefCounted", false, false, Map.of(), List.of(), List.of(), List.of());
+        var func = new LirFunctionDef("set_control_size");
+        func.setReturnType(GdVoidType.VOID);
+        func.addParameter(new LirParameterDef("control", new GdObjectType("Control"), null, func));
+        func.addParameter(new LirParameterDef("value", GdFloatVectorType.VECTOR2, null, func));
+        addEntryStoreAndReturn(func, new StorePropertyInsn("size", "control", "value"));
+
+        var module = new LirModule("test_module", List.of(gdccClass));
+        var ctx = newContext(api, List.of(gdccClass));
+
+        var codegen = new CCodegen();
+        codegen.prepare(ctx, module);
+
+        var body = codegen.generateFuncBody(gdccClass, func);
+        assertTrue(body.contains("godot_Object_set("), body);
+        assertFalse(body.contains("_set_size"), body);
+    }
+
+    @Test
     @DisplayName("Unknown object type should fail-fast (no GDExtensionObjectPtr fallback)")
     void unknownObjectTypeShouldFallbackToGodotObjectSet() {
         var gdccClass = new LirClassDef("TestClass", "RefCounted", false, false, Map.of(), List.of(), List.of(), List.of());

@@ -99,11 +99,24 @@ public final class LoadPropertyInsnGen implements CInsnGen<LoadPropertyInsn> {
                         bodyBuilder.callAssign(target, getterCall, propertyType, List.of(receiverValue));
                     }
                     case ENGINE -> {
-                        var accessor = BackendPropertyAccessResolver.resolveEnginePropertyReadAccessor(
+                        var accessor = BackendPropertyAccessResolver.tryResolveEnginePropertyReadAccessor(
                                 bodyBuilder,
                                 lookup,
                                 "LOAD_PROPERTY"
                         );
+                        if (accessor == null) {
+                            // Godot publishes internal `_get_*` ClassDB accessors that the
+                            // extension API does not expose as callable methods. Object.get
+                            // reaches the same ClassDB getter with exact property semantics.
+                            emitDynamicPropertyLoad(
+                                    bodyBuilder,
+                                    objectVar,
+                                    target,
+                                    resultVar.type(),
+                                    insn.propertyName()
+                            );
+                            break;
+                        }
                         var args = new ArrayList<CBodyBuilder.ValueRef>(accessor.index() == null ? 1 : 2);
                         args.add(receiverValue);
                         if (accessor.index() != null) {
@@ -114,22 +127,13 @@ public final class LoadPropertyInsnGen implements CInsnGen<LoadPropertyInsn> {
                     }
                 }
             } else {
-                // Pass objectVar directly; renderArgument will auto-convert GDCC ptrs
-                // to Godot raw ptrs via gdcc_object_to_godot_object_ptr(value, Type_object_ptr) since godot_Object_get requires Godot ptrs.
-                var objectValue = bodyBuilder.valueOfVar(objectVar);
-                var propertyName = bodyBuilder.valueOfStringNamePtrLiteral(insn.propertyName());
-                var tempVar = bodyBuilder.newTempVariable("variant", GdVariantType.VARIANT);
-                bodyBuilder.declareTempVar(tempVar);
-                bodyBuilder.callAssign(tempVar, "godot_Object_get", GdVariantType.VARIANT, List.of(objectValue, propertyName));
-                var resultType = resultVar.type();
-                InsnGenSupport.unpackVariantAssign(
+                emitDynamicPropertyLoad(
                         bodyBuilder,
+                        objectVar,
                         target,
-                        resultType,
-                        tempVar,
-                        "property load result target"
+                        resultVar.type(),
+                        insn.propertyName()
                 );
-                bodyBuilder.destroyTempVar(tempVar);
             }
         } else {
             var getterName = "godot_" + objectVar.type().getTypeName() + "_get_" + insn.propertyName();
@@ -138,10 +142,38 @@ public final class LoadPropertyInsnGen implements CInsnGen<LoadPropertyInsn> {
         }
     }
 
+    private static void emitDynamicPropertyLoad(@NotNull CBodyBuilder bodyBuilder,
+                                                @NotNull LirVariable objectVar,
+                                                @NotNull CBodyBuilder.ValueRef target,
+                                                @NotNull GdType resultType,
+                                                @NotNull String propertyName) {
+        // Pass objectVar directly; renderArgument auto-converts GDCC pointers to Godot raw
+        // pointers because godot_Object_get requires a Godot object pointer.
+        var tempVar = bodyBuilder.newTempVariable("variant", GdVariantType.VARIANT);
+        bodyBuilder.declareTempVar(tempVar);
+        bodyBuilder.callAssign(
+                tempVar,
+                "godot_Object_get",
+                GdVariantType.VARIANT,
+                List.of(
+                        bodyBuilder.valueOfVar(objectVar),
+                        bodyBuilder.valueOfStringNamePtrLiteral(propertyName)
+                )
+        );
+        InsnGenSupport.unpackVariantAssign(
+                bodyBuilder,
+                target,
+                resultType,
+                tempVar,
+                "property load result target"
+        );
+        bodyBuilder.destroyTempVar(tempVar);
+    }
+
     private @NotNull PropertyReadResolution resolvePropertyRead(@NotNull CBodyBuilder bodyBuilder,
-                                                                @NotNull GdType objectType,
-                                                                @NotNull GdType resultType,
-                                                                @NotNull String propertyName) {
+                                                @NotNull GdType objectType,
+                                                @NotNull GdType resultType,
+                                                @NotNull String propertyName) {
         var registry = bodyBuilder.classRegistry();
         if (objectType instanceof GdObjectType gdObjectType) {
             var lookup = BackendPropertyAccessResolver.resolveObjectProperty(

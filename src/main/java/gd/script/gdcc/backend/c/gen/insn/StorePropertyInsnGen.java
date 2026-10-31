@@ -82,11 +82,18 @@ public final class StorePropertyInsnGen implements CInsnGen<StorePropertyInsn> {
                                 List.of(receiverValue, renderPropertyStoreValue(bodyBuilder, valueVar, objectLookup.property().getType())));
                     }
                     case ENGINE -> {
-                        var accessor = BackendPropertyAccessResolver.resolveEnginePropertyWriteAccessor(
+                        var accessor = BackendPropertyAccessResolver.tryResolveEnginePropertyWriteAccessor(
                                 bodyBuilder,
                                 objectLookup,
                                 "STORE_PROPERTY"
                         );
+                        if (accessor == null) {
+                            // Godot publishes internal `_set_*` ClassDB accessors that the
+                            // extension API does not expose as callable methods. Object.set
+                            // reaches the same ClassDB setter with exact property semantics.
+                            emitDynamicPropertyStore(bodyBuilder, objectVar, valueVar, insn.propertyName());
+                            break;
+                        }
                         var args = new ArrayList<CBodyBuilder.ValueRef>(accessor.index() == null ? 2 : 3);
                         args.add(receiverValue);
                         if (accessor.index() != null) {
@@ -98,18 +105,7 @@ public final class StorePropertyInsnGen implements CInsnGen<StorePropertyInsn> {
                     }
                 }
             } else {
-                var tempVariant = bodyBuilder.newTempVariable("variant", GdVariantType.VARIANT);
-                bodyBuilder.declareTempVar(tempVariant);
-                InsnGenSupport.packVariantAssign(bodyBuilder, tempVariant, valueVar);
-                bodyBuilder.callVoid(
-                        "godot_Object_set",
-                        List.of(
-                                bodyBuilder.valueOfVar(objectVar),
-                                bodyBuilder.valueOfStringNamePtrLiteral(insn.propertyName()),
-                                tempVariant
-                        )
-                );
-                bodyBuilder.destroyTempVar(tempVariant);
+                emitDynamicPropertyStore(bodyBuilder, objectVar, valueVar, insn.propertyName());
             }
         } else {
             var setterName = "godot_" + objectVar.type().getTypeName() + "_set_" + insn.propertyName();
@@ -118,10 +114,28 @@ public final class StorePropertyInsnGen implements CInsnGen<StorePropertyInsn> {
         }
     }
 
+    private static void emitDynamicPropertyStore(@NotNull CBodyBuilder bodyBuilder,
+                                                 @NotNull LirVariable objectVar,
+                                                 @NotNull LirVariable valueVar,
+                                                 @NotNull String propertyName) {
+        var tempVariant = bodyBuilder.newTempVariable("variant", GdVariantType.VARIANT);
+        bodyBuilder.declareTempVar(tempVariant);
+        InsnGenSupport.packVariantAssign(bodyBuilder, tempVariant, valueVar);
+        bodyBuilder.callVoid(
+                "godot_Object_set",
+                List.of(
+                        bodyBuilder.valueOfVar(objectVar),
+                        bodyBuilder.valueOfStringNamePtrLiteral(propertyName),
+                        tempVariant
+                )
+        );
+        bodyBuilder.destroyTempVar(tempVariant);
+    }
+
     private @Nullable BackendPropertyAccessResolver.ObjectPropertyLookup validatePropertyWrite(@NotNull CBodyBuilder bodyBuilder,
-                                                                                               @NotNull GdType objectType,
-                                                                                               @NotNull GdType valueType,
-                                                                                               @NotNull String propertyName) {
+                                                 @NotNull GdType objectType,
+                                                 @NotNull GdType valueType,
+                                                 @NotNull String propertyName) {
         var registry = bodyBuilder.classRegistry();
         if (objectType instanceof GdObjectType gdObjectType) {
             var lookup = BackendPropertyAccessResolver.resolveObjectProperty(

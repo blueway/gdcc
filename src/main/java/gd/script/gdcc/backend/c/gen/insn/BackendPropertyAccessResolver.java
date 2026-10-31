@@ -125,13 +125,69 @@ public final class BackendPropertyAccessResolver {
     static @NotNull EnginePropertyAccessor resolveEnginePropertyReadAccessor(@NotNull CBodyBuilder bodyBuilder,
                                                                              @NotNull ObjectPropertyLookup lookup,
                                                                              @NotNull String insnName) {
-        return resolveEnginePropertyAccessor(bodyBuilder, lookup, insnName, PropertyAccessorKind.READ);
+        return requireResolvedEnginePropertyAccessor(
+                bodyBuilder,
+                lookup,
+                insnName,
+                PropertyAccessorKind.READ,
+                tryResolveEnginePropertyAccessor(bodyBuilder, lookup, insnName, PropertyAccessorKind.READ)
+        );
     }
 
     static @NotNull EnginePropertyAccessor resolveEnginePropertyWriteAccessor(@NotNull CBodyBuilder bodyBuilder,
                                                                               @NotNull ObjectPropertyLookup lookup,
                                                                               @NotNull String insnName) {
-        return resolveEnginePropertyAccessor(bodyBuilder, lookup, insnName, PropertyAccessorKind.WRITE);
+        return requireResolvedEnginePropertyAccessor(
+                bodyBuilder,
+                lookup,
+                insnName,
+                PropertyAccessorKind.WRITE,
+                tryResolveEnginePropertyAccessor(bodyBuilder, lookup, insnName, PropertyAccessorKind.WRITE)
+        );
+    }
+
+    /// Resolves a direct engine property read accessor, or returns null when Godot publishes an
+    /// internal `_get_*` accessor that is not part of the exposed extension method table.
+    ///
+    /// Godot's `extension_api.json` records the ClassDB property accessor name, and some engine
+    /// properties point at internal methods such as `Control._get_layout_mode` that GDExtension
+    /// cannot call. The dynamic `Object.get` protocol is the exact semantic equivalent for those
+    /// properties, so callers may select it instead of treating the property as broken.
+    static @Nullable EnginePropertyAccessor tryResolveEnginePropertyReadAccessor(@NotNull CBodyBuilder bodyBuilder,
+                                                                                @NotNull ObjectPropertyLookup lookup,
+                                                                                @NotNull String insnName) {
+        return tryResolveEnginePropertyAccessor(bodyBuilder, lookup, insnName, PropertyAccessorKind.READ);
+    }
+
+    /// Resolves a direct engine property write accessor, or returns null when Godot publishes an
+    /// internal `_set_*` accessor that is not part of the exposed extension method table.
+    ///
+    /// Callers must use the dynamic `Object.set` protocol in that case: it invokes the same
+    /// ClassDB property setter, including indexed accessors such as `Control._set_anchor`, while
+    /// the direct-call optimization is unavailable.
+    static @Nullable EnginePropertyAccessor tryResolveEnginePropertyWriteAccessor(@NotNull CBodyBuilder bodyBuilder,
+                                                                                 @NotNull ObjectPropertyLookup lookup,
+                                                                                 @NotNull String insnName) {
+        return tryResolveEnginePropertyAccessor(bodyBuilder, lookup, insnName, PropertyAccessorKind.WRITE);
+    }
+
+    private static @NotNull EnginePropertyAccessor requireResolvedEnginePropertyAccessor(
+            @NotNull CBodyBuilder bodyBuilder,
+            @NotNull ObjectPropertyLookup lookup,
+            @NotNull String insnName,
+            @NotNull PropertyAccessorKind kind,
+            @Nullable EnginePropertyAccessor accessor
+    ) {
+        if (accessor != null) {
+            return accessor;
+        }
+        var propertyOwnerClass = requireEnginePropertyOwner(bodyBuilder, lookup, insnName);
+        var property = requireEngineProperty(bodyBuilder, lookup, propertyOwnerClass, insnName);
+        var accessorName = requireAccessorName(bodyBuilder, propertyOwnerClass, property, insnName, kind);
+        throw bodyBuilder.invalidInsn("Engine property '" + propertyOwnerClass.getName() + "." +
+                property.getName() + "' raw " + accessorLabel(kind) + " accessor '" + accessorName +
+                "' is an internal engine accessor that the extension API does not expose as a callable " +
+                accessorLabel(kind) + " in " + insnName + "; use the dynamic property protocol");
     }
 
     /// Convert resolved property owner metadata to object type used by cast/upcast rendering.
@@ -217,15 +273,15 @@ public final class BackendPropertyAccessResolver {
         };
     }
 
-    private static @NotNull EnginePropertyAccessor resolveEnginePropertyAccessor(@NotNull CBodyBuilder bodyBuilder,
-                                                                                 @NotNull ObjectPropertyLookup lookup,
-                                                                                 @NotNull String insnName,
-                                                                                 @NotNull PropertyAccessorKind kind) {
+    private static @Nullable EnginePropertyAccessor tryResolveEnginePropertyAccessor(@NotNull CBodyBuilder bodyBuilder,
+                                                                                    @NotNull ObjectPropertyLookup lookup,
+                                                                                    @NotNull String insnName,
+                                                                                    @NotNull PropertyAccessorKind kind) {
         var propertyOwnerClass = requireEnginePropertyOwner(bodyBuilder, lookup, insnName);
         var property = requireEngineProperty(bodyBuilder, lookup, propertyOwnerClass, insnName);
         var accessorName = requireAccessorName(bodyBuilder, propertyOwnerClass, property, insnName, kind);
         var propertyType = property.getType();
-        var resolved = requireAccessorMethod(
+        var resolved = tryRequireAccessorMethod(
                 bodyBuilder,
                 propertyOwnerClass,
                 property,
@@ -234,6 +290,9 @@ public final class BackendPropertyAccessResolver {
                 insnName,
                 kind
         );
+        if (resolved == null) {
+            return null;
+        }
         var methodOwnerClass = requireEngineMethodOwner(bodyBuilder, propertyOwnerClass, property, resolved, insnName);
         var method = requireEngineMethodMetadata(bodyBuilder, propertyOwnerClass, property, resolved, insnName);
         validateAccessorShape(bodyBuilder, propertyOwnerClass, property, resolved, propertyType, insnName, kind);
@@ -315,13 +374,13 @@ public final class BackendPropertyAccessResolver {
         };
     }
 
-    private static @NotNull ScopeResolvedMethod requireAccessorMethod(@NotNull CBodyBuilder bodyBuilder,
-                                                                      @NotNull ExtensionGdClass ownerClass,
-                                                                      @NotNull ExtensionGdClass.PropertyInfo property,
-                                                                      @NotNull String accessorName,
-                                                                      @NotNull List<GdType> argTypes,
-                                                                      @NotNull String insnName,
-                                                                      @NotNull PropertyAccessorKind kind) {
+    private static @Nullable ScopeResolvedMethod tryRequireAccessorMethod(@NotNull CBodyBuilder bodyBuilder,
+                                                                          @NotNull ExtensionGdClass ownerClass,
+                                                                          @NotNull ExtensionGdClass.PropertyInfo property,
+                                                                          @NotNull String accessorName,
+                                                                          @NotNull List<GdType> argTypes,
+                                                                          @NotNull String insnName,
+                                                                          @NotNull PropertyAccessorKind kind) {
         var result = ScopeMethodResolver.resolveInstanceMethod(
                 bodyBuilder.classRegistry(),
                 new GdObjectType(ownerClass.getName()),
@@ -330,11 +389,21 @@ public final class BackendPropertyAccessResolver {
         );
         return switch (result) {
             case ScopeMethodResolver.Resolved resolved -> resolved.method();
-            case ScopeMethodResolver.DynamicFallback dynamicFallback -> throw bodyBuilder.invalidInsn(
-                    "Engine property '" + ownerClass.getName() + "." + property.getName() +
-                            "' raw " + accessorLabel(kind) + " accessor '" + accessorName +
-                            "' could not be resolved in " + insnName + ": " + dynamicFallback.reason()
-            );
+            case ScopeMethodResolver.DynamicFallback dynamicFallback -> {
+                // Godot's API dump records internal ClassDB accessors (`_set_size`,
+                // `_get_layout_mode`, ...) that are deliberately absent from the exposed method
+                // table. That is not missing metadata: the dynamic property protocol reaches the
+                // same ClassDB accessor and is the correct lowering for those properties.
+                if (dynamicFallback.reason() == ScopeMethodResolver.DynamicFallbackReason.METHOD_MISSING
+                        && accessorName.startsWith("_")) {
+                    yield null;
+                }
+                throw bodyBuilder.invalidInsn(
+                        "Engine property '" + ownerClass.getName() + "." + property.getName() +
+                                "' raw " + accessorLabel(kind) + " accessor '" + accessorName +
+                                "' could not be resolved in " + insnName + ": " + dynamicFallback.reason()
+                );
+            }
             case ScopeMethodResolver.Failed failed -> throw bodyBuilder.invalidInsn(
                     "Engine property '" + ownerClass.getName() + "." + property.getName() +
                             "' raw " + accessorLabel(kind) + " accessor '" + accessorName +

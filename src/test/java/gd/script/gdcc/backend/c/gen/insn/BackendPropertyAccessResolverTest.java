@@ -276,6 +276,69 @@ class BackendPropertyAccessResolverTest {
     }
 
     @Test
+    @DisplayName("tryResolveEnginePropertyWriteAccessor should select the dynamic protocol for internal _set_* accessors")
+    void tryResolveEnginePropertyWriteAccessorReturnsNullForInternalAccessor() {
+        var controlClass = engineClass(
+                "Control",
+                "Object",
+                List.of(method("set_size", 601L, List.of(), "void", List.of(arg("size", "Vector2")))),
+                List.of(property("size", "Vector2", "get_size", "_set_size", null))
+        );
+        var bodyBuilder = newBodyBuilder(apiWithClasses(controlClass), List.of());
+        var lookup = BackendPropertyAccessResolver.resolveObjectProperty(
+                bodyBuilder,
+                new GdObjectType("Control"),
+                "size",
+                "store_property"
+        );
+        assertNotNull(lookup);
+
+        var accessor = BackendPropertyAccessResolver.tryResolveEnginePropertyWriteAccessor(
+                bodyBuilder,
+                lookup,
+                "store_property"
+        );
+        assertNull(accessor);
+
+        var ex = assertThrows(
+                InvalidInsnException.class,
+                () -> BackendPropertyAccessResolver.resolveEnginePropertyWriteAccessor(
+                        bodyBuilder,
+                        lookup,
+                        "store_property"
+                )
+        );
+        assertTrue(ex.getMessage().contains("_set_size"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("dynamic property protocol"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("tryResolveEnginePropertyReadAccessor should select the dynamic protocol for internal _get_* accessors")
+    void tryResolveEnginePropertyReadAccessorReturnsNullForInternalAccessor() {
+        var controlClass = engineClass(
+                "Control",
+                "Object",
+                List.of(),
+                List.of(property("layout_mode", "int", "_get_layout_mode", "_set_layout_mode", null))
+        );
+        var bodyBuilder = newBodyBuilder(apiWithClasses(controlClass), List.of());
+        var lookup = BackendPropertyAccessResolver.resolveObjectProperty(
+                bodyBuilder,
+                new GdObjectType("Control"),
+                "layout_mode",
+                "load_property"
+        );
+        assertNotNull(lookup);
+
+        var accessor = BackendPropertyAccessResolver.tryResolveEnginePropertyReadAccessor(
+                bodyBuilder,
+                lookup,
+                "load_property"
+        );
+        assertNull(accessor);
+    }
+
+    @Test
     @DisplayName("resolveEnginePropertyReadAccessor should fail-fast when raw getter method metadata is missing")
     void resolveEnginePropertyReadAccessorFailsWhenGetterMetadataMissing() {
         var nodeClass = engineClass(

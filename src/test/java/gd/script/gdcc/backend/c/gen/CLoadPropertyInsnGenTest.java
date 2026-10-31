@@ -24,6 +24,7 @@ import gd.script.gdcc.type.GdColorType;
 import gd.script.gdcc.type.GdccForRangeIterType;
 import gd.script.gdcc.type.GdFloatType;
 import gd.script.gdcc.type.GdFloatVectorType;
+import gd.script.gdcc.type.GdIntType;
 import gd.script.gdcc.type.GdNilType;
 import gd.script.gdcc.type.GdObjectType;
 import gd.script.gdcc.type.GdStringNameType;
@@ -1021,6 +1022,44 @@ public class CLoadPropertyInsnGenTest {
         var body = codegen.generateFuncBody(hostClass, func);
         assertTrue(body.contains("gdcc_engine_call_node_get_name_P_RT(gdcc_Control_fat_ptr_upcast_to_Node($control));"), body);
         assertFalse(body.contains("gdcc_engine_call_control_get_name_"), body);
+    }
+
+    @Test
+    @DisplayName("Engine property with internal _get_* accessor should load through godot_Object_get")
+    void enginePropertyWithInternalGetterShouldUseDynamicObjectGet() {
+        var controlClass = new ExtensionGdClass(
+                "Control", false, true, "Object", "core",
+                List.of(), List.of(), List.of(),
+                List.of(new ExtensionGdClass.PropertyInfo("layout_mode", "int", true, true, "", "_get_layout_mode", "_set_layout_mode", null)),
+                List.of()
+        );
+        var api = new ExtensionAPI(
+                null, List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(controlClass), List.of(), List.of()
+        );
+
+        var hostClass = new LirClassDef("HostClass", "RefCounted", false, false, Map.of(), List.of(), List.of(), List.of());
+        var func = new LirFunctionDef("load_control_layout_mode");
+        func.setReturnType(GdIntType.INT);
+        func.addParameter(new LirParameterDef("control", new GdObjectType("Control"), null, func));
+        func.createAndAddVariable("tmp", GdIntType.INT);
+
+        var entry = new LirBasicBlock("entry");
+        entry.appendInstruction(new LoadPropertyInsn("tmp", "layout_mode", "control"));
+        entry.appendInstruction(new ReturnInsn("tmp"));
+        func.addBasicBlock(entry);
+        func.setEntryBlockId("entry");
+        hostClass.addFunction(func);
+
+        var module = new LirModule("test_module", List.of(hostClass));
+        var ctx = newContext(api, List.of(hostClass));
+
+        var codegen = new CCodegen();
+        codegen.prepare(ctx, module);
+
+        var body = codegen.generateFuncBody(hostClass, func);
+        assertTrue(body.contains("godot_Object_get("), body);
+        assertFalse(body.contains("_get_layout_mode"), body);
     }
 
     @Test
