@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ZIG_VERSION="0.15.2"
+ZIG_VERSION="${ZIG_VERSION:-0.17.0}"
 TEMURIN_FEATURE_VERSION="25"
-ZIG_MIRROR_URL="${ZIG_MIRROR_URL:-https://zigmirror.com}"
+ZIG_DOWNLOAD_BASE_URL="${ZIG_DOWNLOAD_BASE_URL:-https://ziglang.org/download}"
 ADOPTIUM_API_URL="${ADOPTIUM_API_URL:-https://api.adoptium.net/v3/binary/latest}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1; pwd)"
@@ -166,7 +166,7 @@ download_zig_archive() {
     archive_name="$(zig_archive_name "$platform")"
     archive_path="$ZIG_DOWNLOAD_DIR/$archive_name"
     part_path="$archive_path.part"
-    url="$ZIG_MIRROR_URL/$archive_name"
+    url="$ZIG_DOWNLOAD_BASE_URL/$ZIG_VERSION/$archive_name"
 
     mkdir -p "$ZIG_DOWNLOAD_DIR"
 

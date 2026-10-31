@@ -74,16 +74,16 @@ zig cc -target <zigTarget> -shared [-flto=thin|-flto -O2]
 4. target 命中 `THIN_LTO_UNSUPPORTED_ZIG_TARGETS`：RELEASE 回退 `-flto`（full LTO）；当前该集合为空；
 5. 其余 RELEASE：`-flto=thin`（编译与链接同带，链接随 LTO 带 `-O2`）。
 
-macOS 禁用 LTO 的原因是 Zig 0.15.2 的驱动不为 Mach-O 启用 LLD，而 thin/full LTO 都要求 LLD；`-flto=thin` 和 `-flto` 均会在编译配置阶段报 `LTO requires using LLD`，不能通过回退 full LTO 解决。这是该版本 Zig 的集成限制，并非上游 LLD 不支持 Mach-O；策略按目标平台生效，与构建主机无关。
+macOS 禁用 LTO 的原因是 Zig 0.17.0 的驱动不为 Mach-O 启用 LLD，而 thin/full LTO 都要求 LLD；`-flto=thin` 和 `-flto` 均会在编译配置阶段报 `LTO requires using LLD`，不能通过回退 full LTO 解决。这是该版本 Zig 的集成限制，并非上游 LLD 不支持 Mach-O；策略按目标平台生效，与构建主机无关。
 
 决策由 package-private 静态方法 `resolveLtoMode(...)` 给出，ThinLTO 不兼容 target 必须由命令级测试（`ZigCcCompilerCommandTest`）锁定，不得通过链接失败反推。
 
 ### 3.3 target 已知限制
 
 - Windows 声明 target 统一为 `x86_64-windows-gnu` / `aarch64-windows-gnu`，不依赖 MSVC SDK。GDExtension C 边界与 Godot Windows 加载器依据见 `doc/gdcc_c_backend.md` 的 Windows ABI。
-- CI 与完整分发固定使用 Zig 0.15.2。Zig 0.16.0 存在 Windows GNU/LTO `zigc` weak-symbol 链接 bug（`frexpf`/`frexpl`/`modfl` 等 undefined；[Zig #31958](https://codeberg.org/ziglang/zig/issues/31958)），不应概括为 GNU ABI 不支持 LTO。该工具链限制不改变公共 LTO 策略。
+- CI 与完整分发固定使用 Zig 0.17.0。Windows GNU/LTO 仍受上游 `zigc` weak-symbol 链接 bug 影响（`frexpf`/`frexpl`/`modfl` 等 undefined；[Zig #31958](https://codeberg.org/ziglang/zig/issues/31958)）；本项目不声明 Windows 支持，交叉链接 smoke 只覆盖 Linux。
 - android/web-wasm32 的失败是 sysroot/runtime 限制（android 需 NDK/Bionic；wasm 上 minicoro 锁定 `MCO_USE_ASM` 按设计 fail loudly），与 LTO 无关：二者的 LTO 决策保持默认（RELEASE 取 `-flto=thin`），真实构建显式跳过或仅做 `-c` 编译。web 的 Emscripten 后端是独立 post-MVP 项目，不属于 zig 后端职责。
-- `macos-x86-64` / `macos-aarch64` 产出 `lib<name>.dylib`，不启用 LTO（见 §3.2）。Zig 0.15.2 自带 Darwin libc 链接桩；当前编辑器插件的 C ABI/系统库依赖可从 Linux x64 和 Windows x64 交叉链接，不需要额外 Darwin sysroot。这不保证额外 Apple framework 的链接。两种架构的无 LTO 命令和 RELEASE `-O2` 由 `ZigCcCompilerCommandTest` 覆盖，macOS AArch64 的真实交叉构建由编辑器插件四平台分发入口覆盖；`ZigCcCompilerCrossTargetSmokeTest` 聚焦 Linux/Windows 的 LTO 链接。
+- `macos-x86-64` / `macos-aarch64` 产出 `lib<name>.dylib`，不启用 LTO（见 §3.2）。Zig 0.17.0 自带 Darwin libc 链接桩；当前编辑器插件的 C ABI/系统库依赖可从 Linux x64 和 Windows x64 交叉链接，不需要额外 Darwin sysroot。这不保证额外 Apple framework 的链接。两种架构的无 LTO 命令和 RELEASE `-O2` 由 `ZigCcCompilerCommandTest` 覆盖，macOS AArch64 的真实交叉构建由编辑器插件四平台分发入口覆盖；`ZigCcCompilerCrossTargetSmokeTest` 聚焦 Linux 的 LTO 链接。
 - zig cc 拒绝透传 `-Wl,--thinlto-cache-dir`/`-fthinlto-cache-dir`，因此 ThinLTO 链接后端无法跨构建缓存；不直接驱动 `zig ld.lld`（见 §9 后续方向）。
 
 ### 3.4 TinyCC 管线差异登记

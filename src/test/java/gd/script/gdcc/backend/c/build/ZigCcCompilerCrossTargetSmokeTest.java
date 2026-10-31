@@ -35,13 +35,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// serializing five cold cross-target builds inside one test.
 @Execution(ExecutionMode.CONCURRENT)
 public class ZigCcCompilerCrossTargetSmokeTest {
-    /// Targets the current toolchain can build end to end: host + linux cross + windows cross.
+    /// Targets the current toolchain can build end to end: host + linux cross.
+    /// Windows GNU is excluded under Zig 0.17: upstream still fails the LTO link
+    /// (ziglang/zig#31958), and this project does not ship Windows.
     private static final List<TargetPlatform> BUILDABLE_TARGETS = List.of(
             TargetPlatform.LINUX_X86_64,
             TargetPlatform.LINUX_AARCH64,
-            TargetPlatform.LINUX_RISCV64,
-            TargetPlatform.WINDOWS_X86_64,
-            TargetPlatform.WINDOWS_AARCH64);
+            TargetPlatform.LINUX_RISCV64);
 
     private static @NotNull Stream<TargetPlatform> buildableTargets() {
         return BUILDABLE_TARGETS.stream();

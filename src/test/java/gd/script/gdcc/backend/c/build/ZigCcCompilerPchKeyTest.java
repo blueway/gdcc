@@ -48,7 +48,7 @@ class ZigCcCompilerPchKeyTest {
     void zigVersionChangeChangesTheKey(@TempDir Path tempDir) throws IOException {
         var includes = writeIncludeTree(tempDir.resolve("inc"));
         assertNotEquals(
-                ZigCcCompiler.resolvePchCacheKey("0.15.2", TARGET, CLtoMode.THIN, COptimizationLevel.RELEASE, includes),
+                ZigCcCompiler.resolvePchCacheKey("0.17.0", TARGET, CLtoMode.THIN, COptimizationLevel.RELEASE, includes),
                 ZigCcCompiler.resolvePchCacheKey(VERSION, TARGET, CLtoMode.THIN, COptimizationLevel.RELEASE, includes),
                 "a zig upgrade must invalidate every cached PCH");
     }

@@ -57,7 +57,7 @@ tinycc-bundle/<platformKey>/            # linux-x86_64 / windows-x86_64 / linux-
 ```
 
 - 平台路径合同：Windows 库路径为 `{B}/lib`（`lib/libtcc1.a`）；Linux/macOS 库路径为 `{B}` 根（`libtcc1.a` 置于 root）。交叉构建器按目标生成配置：Linux 经 `CONFIG_TRIPLET` 使用目标系统头/CRT；macOS 使用目标机标准 CLT 路径 `/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr`，不烤入构建机路径。
-- macOS 的 `bin/libtcc.dylib` 必须使用 twolevel namespace（flat namespace 会把 libtcc 全局符号错绑到进程内其他库的同名符号，首次 FFM 编译即崩溃）。Zig 0.15.2 的 Mach-O 链接器默认设置 `MH_TWOLEVEL`，不接受 `-Wl,-twolevel_namespace`；交叉构建只设置可移植的 `@rpath/libtcc.dylib` install name，ARM64 ad-hoc 签名由 Zig 自动生成，矩阵测试检查 namespace、install name 与 `LC_CODE_SIGNATURE`。旧宿主脚本仍用 `otool -hv`/`codesign -v` 验证。
+- macOS 的 `bin/libtcc.dylib` 必须使用 twolevel namespace（flat namespace 会把 libtcc 全局符号错绑到进程内其他库的同名符号，首次 FFM 编译即崩溃）。Zig 0.17.0 的 Mach-O 链接器默认设置 `MH_TWOLEVEL`，不接受 `-Wl,-twolevel_namespace`；交叉构建只设置可移植的 `@rpath/libtcc.dylib` install name，ARM64 ad-hoc 签名由 Zig 自动生成，矩阵测试检查 namespace、install name 与 `LC_CODE_SIGNATURE`。旧宿主脚本仍用 `otool -hv`/`codesign -v` 验证。
 - 最终 Mach-O 产物的 `codesign` 调用使用 `posix_spawnp` 的独立 argv，不经过 shell，路径中的空格、引号和 shell 特殊字符保持字面含义。等待被 `EINTR` 打断时重试；启动、等待或签名状态失败经 `tcc_error_noabort` 返回非零编译状态，不得终止嵌入 libtcc 的 JVM。`TinyCcCompilerTest` 的 macOS 子 JVM 用例覆盖签名失败后继续编译。
 - `tcc_set_lib_path` 指向 bundle 根；libtcc 本体路径仅用于 FFM `SymbolLookup.libraryLookup`；JAR 内 bundle 资源必须先落盘。
 

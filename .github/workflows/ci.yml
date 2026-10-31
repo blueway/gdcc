@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  ZIG_VERSION: 0.15.2
+  ZIG_VERSION: 0.17.0
   GODOT_VERSION: 4.5.1
   GODOT_STATUS: stable
 
@@ -113,7 +113,7 @@ jobs:
           esac
 
           zig_archive="zig-${zig_triple}-${ZIG_VERSION}.${zig_ext}"
-          zig_url="https://zigmirror.com/${zig_archive}"
+          zig_url="https://ziglang.org/download/${ZIG_VERSION}/${zig_archive}"
           zig_root="${GITHUB_WORKSPACE}/.tools/zig/${ZIG_VERSION}"
           zig_bin="${zig_root}/bin"
           zig_exe="${zig_bin}/${zig_name}"

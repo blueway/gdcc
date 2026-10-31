@@ -392,7 +392,7 @@ public class ZigCcCompiler implements CCompiler {
     }
 
     /// ABI-substituted builds and macOS targets omit LTO before any fallback decision.
-    /// Zig 0.15.2 does not enable LLD for Mach-O, while both thin and full LTO require LLD;
+    /// Zig 0.17.0 does not enable LLD for Mach-O, while both thin and full LTO require LLD;
     /// macOS RELEASE still compiles each TU with `-O2`. DEBUG never uses LTO; other RELEASE
     /// builds use ThinLTO unless the target requires the full-LTO fallback.
     static @NotNull CLtoMode resolveLtoMode(@NotNull String zigTarget, boolean abiSubstituted, @NotNull COptimizationLevel optimizationLevel) {
