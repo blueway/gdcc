@@ -416,6 +416,7 @@ class RpcJsonCodecTest {
                         TargetPlatform.MACOS_AARCH64, "MACOS_AARCH64",
                         TargetPlatform.ANDROID_X86_64, "ANDROID_X86_64",
                         TargetPlatform.ANDROID_AARCH64, "ANDROID_AARCH64",
+                        TargetPlatform.ANDROID_ARM32, "ANDROID_ARM32",
                         TargetPlatform.WEB_WASM32, "WEB_WASM32"
                 )
         );

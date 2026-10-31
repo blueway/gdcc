@@ -27,8 +27,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The tinycc backend emits x86_64 shared objects that request an
+          # executable stack. Ubuntu 26.04 (ubuntu-latest since 2026-10-31)
+          # refuses to load them with "cannot enable executable stack ...
+          # Invalid argument", so keep the x64 jobs on the image that passes
+          # until the backend stops requesting execstack.
           - name: Linux x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             id: linux-x64
             upload_jar: true
           - name: Linux aarch64
@@ -36,7 +41,7 @@ jobs:
             id: linux-aarch64
             upload_jar: false
           - name: Linux x64 (Editor Addon)
-            os: ubuntu-latest
+            os: ubuntu-24.04
             id: linux-x64-editor-addon
             upload_jar: false
             editor_addon_only: true

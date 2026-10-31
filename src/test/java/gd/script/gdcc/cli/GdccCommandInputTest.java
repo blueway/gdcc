@@ -33,8 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GdccCommandInputTest {
     private static final List<Path> DEFAULT_OUTPUT_BUILD_DIRECTORIES = List.of(
-            Path.of("player_enemy"),
-            Path.of("main_main")
+            Path.of("core")
     );
 
     @AfterEach
@@ -69,7 +68,7 @@ class GdccCommandInputTest {
     }
 
     @Test
-    void missingOutputUsesInputFileStemsAsModuleTarget(@TempDir Path tempDir) throws IOException {
+    void missingOutputUsesCoreAsModuleTarget(@TempDir Path tempDir) throws IOException {
         var playerSource = writeSource(tempDir.resolve("player.gd"), validSource("Player"));
         var enemySource = writeSource(tempDir.resolve("enemy.gd"), validSource("Enemy"));
         var terminal = new Terminal();
@@ -77,15 +76,15 @@ class GdccCommandInputTest {
         var exitCode = terminal.command().commandLine().execute(playerSource.toString(), enemySource.toString());
 
         assertEquals(0, exitCode);
-        assertEquals(List.of("player_enemy"), terminal.api.listModules().stream().map(ModuleSnapshot::moduleId).toList());
-        assertEquals(Path.of("player_enemy").toAbsolutePath().normalize(),
-                terminal.api.getCompileOptions("player_enemy").projectPath());
+        assertEquals(List.of("core"), terminal.api.listModules().stream().map(ModuleSnapshot::moduleId).toList());
+        assertEquals(Path.of("core").toAbsolutePath().normalize(),
+                terminal.api.getCompileOptions("core").projectPath());
         assertEquals(List.of(playerSource.toString(), enemySource.toString()),
-                CliCompileTestSupport.awaitLastResult(terminal.api, "player_enemy").sourcePaths());
+                CliCompileTestSupport.awaitLastResult(terminal.api, "core").sourcePaths());
     }
 
     @Test
-    void missingOutputKeepsRepeatedInputFileStems(@TempDir Path tempDir) throws IOException {
+    void missingOutputUsesCoreForRepeatedInputFileStems(@TempDir Path tempDir) throws IOException {
         var firstSource = writeSource(tempDir.resolve("one/main.gd"), validSource("FirstMain"));
         var secondSource = writeSource(tempDir.resolve("two/main.gd"), validSource("SecondMain"));
         var terminal = new Terminal();
@@ -93,9 +92,9 @@ class GdccCommandInputTest {
         var exitCode = terminal.command().commandLine().execute(firstSource.toString(), secondSource.toString());
 
         assertEquals(0, exitCode);
-        assertEquals(List.of("main_main"), terminal.api.listModules().stream().map(ModuleSnapshot::moduleId).toList());
-        assertEquals(Path.of("main_main").toAbsolutePath().normalize(),
-                terminal.api.getCompileOptions("main_main").projectPath());
+        assertEquals(List.of("core"), terminal.api.listModules().stream().map(ModuleSnapshot::moduleId).toList());
+        assertEquals(Path.of("core").toAbsolutePath().normalize(),
+                terminal.api.getCompileOptions("core").projectPath());
     }
 
     @Test
